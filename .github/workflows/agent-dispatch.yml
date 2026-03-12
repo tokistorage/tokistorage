@@ -47,8 +47,6 @@ jobs:
       # ── update_task ────────────────────────────────────────
       - name: update_task
         if: steps.parse.outputs.action == 'update_task'
-        env:
-          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
           python3 << 'PYEOF'
           import json, urllib.request, os, sys
@@ -90,13 +88,12 @@ jobs:
               json.dump({'action': 'update_task', 'results': results}, f, ensure_ascii=False, indent=2)
           PYEOF
         env:
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
           PAYLOAD: ${{ steps.parse.outputs.payload }}
 
       # ── create_issue ───────────────────────────────────────
       - name: create_issue
         if: steps.parse.outputs.action == 'create_issue'
-        env:
-          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
           python3 << 'PYEOF'
           import json, urllib.request, os
@@ -122,6 +119,7 @@ jobs:
               json.dump({'action': 'create_issue', 'issue_number': issue['number'], 'url': issue['html_url'], 'title': title}, f, ensure_ascii=False, indent=2)
           PYEOF
         env:
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
           PAYLOAD: ${{ steps.parse.outputs.payload }}
 
       # ── write_file ─────────────────────────────────────────
