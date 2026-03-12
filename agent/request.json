@@ -1,9 +1,8 @@
 {
-  "action": "create_issue",
+  "action": "add_comment",
   "payload": {
-    "title": "部屋の片付け",
-    "body": "",
-    "labels": [],
-    "repo": "tokistorage/tokistorage.github.io"
+    "issue_number": 1,
+    "repo": "tokistorage/tokistorage",
+    "body": "誤登録のため、tokistorage.github.io#99 に移行しました。"
   }
 }
