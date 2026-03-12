@@ -93,12 +93,11 @@ GitHub Actions経由で実行できる操作。
   "payload": {
     "title": "タスクタイトル",
     "body": "詳細",
-    "labels": ["enhancement"],
-    "repo": "tokistorage/tokistorage.github.io"
+    "labels": ["enhancement"]
   }
 }
 ```
-→ `repo` で指定したリポジトリに Issue を作成（省略時は `tokistorage/tokistorage.github.io`）
+→ `tokistorage/tokistorage` にIssueを作成し、自動でProject「短期計画」にも追加（`repo` 指定で別リポジトリも可）
 
 ```json
 {
