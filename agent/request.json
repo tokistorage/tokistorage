@@ -1,1 +1,3 @@
-{"action": "fetch_project", "payload": {}}
+{"action": "update_task", "payload": {"updates": [
+  {"task_id": "PVTI_lAHOD5OzBM4BRKWuzgm8SiY", "new_status": "In Progress"}
+]}}
