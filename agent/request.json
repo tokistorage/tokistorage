@@ -1,8 +1,7 @@
 {
-  "action": "add_comment",
+  "action": "close_issue",
   "payload": {
     "issue_number": 1,
-    "repo": "tokistorage/tokistorage",
-    "body": "誤登録のため、tokistorage.github.io#99 に移行しました。"
+    "repo": "tokistorage/tokistorage"
   }
 }
