@@ -1,1 +1,1 @@
-{"action": "close_issue", "payload": {"issue_number": 3, "repo": "tokistorage/tokistorage"}}
+{"action": "create_issue", "payload": {"title": "動作確認テスト", "body": "create_issue の修正確認用"}}
