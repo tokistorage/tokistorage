@@ -100,6 +100,17 @@ GitHub Actions経由で実行できる操作。
 ```
 → `repo` で指定したリポジトリに Issue を作成（省略時は `tokistorage/tokistorage.github.io`）
 
+```json
+{
+  "action": "close_issue",
+  "payload": {
+    "issue_number": 1,
+    "repo": "tokistorage/tokistorage.github.io"
+  }
+}
+```
+→ 指定したIssueをクローズ（`repo` 省略時は `tokistorage/tokistorage.github.io`）
+
 ### ファイル操作
 ```json
 {

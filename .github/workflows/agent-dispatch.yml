@@ -281,6 +281,38 @@ jobs:
           PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
           PAYLOAD: ${{ steps.parse.outputs.payload }}
 
+      # ── close_issue ───────────────────────────────────────
+      - name: close_issue
+        if: steps.parse.outputs.action == 'close_issue'
+        run: |
+          python3 << 'PYEOF'
+          import json, urllib.request, os
+
+          payload = json.loads(os.environ.get('PAYLOAD', '{}'))
+          token = os.environ['PAT_TOKEN']
+          issue_number = payload.get('issue_number')
+          repo = payload.get('repo', 'tokistorage/tokistorage.github.io')
+
+          if not issue_number:
+              raise ValueError("issue_number is required")
+
+          req = urllib.request.Request(
+              f'https://api.github.com/repos/{repo}/issues/{issue_number}',
+              data=json.dumps({'state': 'closed'}).encode(),
+              headers={'Authorization': f'bearer {token}', 'Content-Type': 'application/json', 'Accept': 'application/vnd.github+json'},
+              method='PATCH'
+          )
+          with urllib.request.urlopen(req) as r:
+              issue = json.loads(r.read())
+          print(f"✅ Issue #{issue_number} クローズ: {issue['state']}")
+
+          with open('/tmp/result.json', 'w') as f:
+              json.dump({'action': 'close_issue', 'issue_number': issue_number, 'repo': repo, 'state': issue['state']}, f, ensure_ascii=False, indent=2)
+          PYEOF
+        env:
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+          PAYLOAD: ${{ steps.parse.outputs.payload }}
+
       # ── run_skill ──────────────────────────────────────────
       # Claude自身が次のアクションのリクエストを書き込むスキルチェーン用
       - name: run_skill
@@ -310,6 +342,7 @@ jobs:
           steps.parse.outputs.action != 'write_memory' &&
           steps.parse.outputs.action != 'publish_essay' &&
           steps.parse.outputs.action != 'add_comment' &&
+          steps.parse.outputs.action != 'close_issue' &&
           steps.parse.outputs.action != 'reorder_tasks' &&
           steps.parse.outputs.action != 'run_skill'
         run: |
@@ -398,6 +431,11 @@ jobs:
               mkdir -p /tmp/tr/outbox
               cp /tmp/result.json /tmp/tr/outbox/reorder_result.json
               echo "✅ 並び替え結果 → outbox/reorder_result.json"
+              ;;
+            close_issue)
+              mkdir -p /tmp/tr/outbox
+              cp /tmp/result.json /tmp/tr/outbox/close_issue_result.json
+              echo "✅ クローズ結果 → outbox/close_issue_result.json"
               ;;
             add_comment)
               mkdir -p /tmp/tr/outbox
