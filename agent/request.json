@@ -1,1 +1,1 @@
-{"action": "create_issue", "payload": {"title": "動作確認テスト", "body": "create_issue の修正確認用"}}
+{"action": "fetch_project", "payload": {}}
