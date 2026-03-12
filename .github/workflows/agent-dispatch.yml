@@ -210,12 +210,13 @@ jobs:
           token = os.environ['PAT_TOKEN']
           issue_number = payload.get('issue_number')
           body = payload.get('body', '')
+          repo = payload.get('repo', 'tokistorage/tokistorage')
 
           if not issue_number:
               raise ValueError("issue_number is required")
 
           req = urllib.request.Request(
-              f'https://api.github.com/repos/tokistorage/tokistorage/issues/{issue_number}/comments',
+              f'https://api.github.com/repos/{repo}/issues/{issue_number}/comments',
               data=json.dumps({'body': body}).encode(),
               headers={'Authorization': f'bearer {token}', 'Content-Type': 'application/json', 'Accept': 'application/vnd.github+json'}
           )
