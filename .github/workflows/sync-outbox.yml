@@ -1,0 +1,65 @@
+name: Sync Outbox to Public Site
+
+on:
+  push:
+    paths:
+      - 'agent/publish.json'
+  workflow_dispatch:
+    inputs:
+      type:
+        description: 'Sync type: essay | all'
+        required: false
+        default: 'essay'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read publish request
+        id: pub
+        run: |
+          if [ -f agent/publish.json ]; then
+            TYPE=$(python3 -c "import json; print(json.load(open('agent/publish.json')).get('type','essay'))")
+          else
+            TYPE="${{ github.event.inputs.type }}"
+          fi
+          echo "type=$TYPE" >> $GITHUB_OUTPUT
+          echo "▶ sync type=$TYPE"
+
+      - name: Pull from private repo (tr)
+        env:
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+        run: |
+          git clone https://x-access-token:$PAT_TOKEN@github.com/tokistorage/tr.git /tmp/tr
+
+      - name: Clone public site repo
+        env:
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+        run: |
+          git clone https://x-access-token:$PAT_TOKEN@github.com/tokistorage/tokistorage.github.io.git /tmp/site
+
+      - name: Sync essays
+        if: steps.pub.outputs.type == 'essay' || steps.pub.outputs.type == 'all'
+        run: |
+          mkdir -p /tmp/site/essays
+          if [ -d /tmp/tr/outbox/essays ] && [ "$(ls -A /tmp/tr/outbox/essays)" ]; then
+            cp -r /tmp/tr/outbox/essays/. /tmp/site/essays/
+            echo "✅ essays同期完了"
+            ls /tmp/tr/outbox/essays/
+          else
+            echo "⚠️ 同期するエッセイなし"
+          fi
+
+      - name: Commit to public site
+        env:
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+        run: |
+          cd /tmp/site
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add -A
+          git diff --cached --quiet || git commit -m "sync: outbox → site $(date '+%Y-%m-%dT%H:%M:%S') [skip ci]"
+          git push
+          echo "✅ 公開サイト更新完了"
