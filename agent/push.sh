@@ -6,6 +6,7 @@
 #   1. agent/request.json に _t タイムスタンプを自動付与
 #   2. .github/workflows/agent-dispatch.yml の構文チェック
 #   3. 問題なければ push
+#   4. 短いポーリング（3秒×10回）で完了を待機
 
 set -e
 
@@ -37,12 +38,11 @@ with open('$REQUEST', 'w') as f:
 print(f"✅ _t 付与: $TIMESTAMP")
 PYEOF
 
-# ワークフロー YAML チェック（GitHub Actionsのパーサーは寛容なので簡易チェックのみ）
+# ワークフロー YAML チェック
 python3 -c "
 import sys
 with open('$WORKFLOW') as f:
     content = f.read()
-# インデントなしのコード行がrun:ブロック内に混入していないか簡易チェック
 lines = content.split('\n')
 in_run_block = False
 for i, line in enumerate(lines, 1):
@@ -66,4 +66,18 @@ git push https://${PAT}@github.com/tokistorage/tokistorage.git main
 
 echo ""
 echo "✅ push完了: $ACTION"
-echo "📋 Actionsの結果を確認したら、tr/outbox/ を git pull してください"
+echo "⏳ 結果を待機中（3秒×10回）..."
+
+BEFORE=$(cat /home/claude/tr/.agent/last_run.json 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('last_run',''))" 2>/dev/null || echo "")
+for i in $(seq 1 10); do
+  sleep 3
+  cd /home/claude/tr && git pull https://${PAT}@github.com/tokistorage/tr.git main -q 2>/dev/null
+  AFTER=$(cat .agent/last_run.json 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('last_run',''))" 2>/dev/null || echo "")
+  if [ "$AFTER" != "$BEFORE" ] && [ -n "$AFTER" ]; then
+    echo "✅ 完了 ($((i*3))秒)"
+    cat .agent/last_run.json
+    exit 0
+  fi
+  echo "  ($i/10)"
+done
+echo "⚠️  30秒以内に完了しませんでした。Actionsタブで確認してください"
