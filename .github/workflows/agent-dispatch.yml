@@ -199,6 +199,37 @@ jobs:
         env:
           PAYLOAD: ${{ steps.parse.outputs.payload }}
 
+      # ── add_comment ────────────────────────────────────────
+      - name: add_comment
+        if: steps.parse.outputs.action == 'add_comment'
+        run: |
+          python3 << 'PYEOF'
+          import json, urllib.request, os
+
+          payload = json.loads(os.environ.get('PAYLOAD', '{}'))
+          token = os.environ['PAT_TOKEN']
+          issue_number = payload.get('issue_number')
+          body = payload.get('body', '')
+
+          if not issue_number:
+              raise ValueError("issue_number is required")
+
+          req = urllib.request.Request(
+              f'https://api.github.com/repos/tokistorage/tokistorage/issues/{issue_number}/comments',
+              data=json.dumps({'body': body}).encode(),
+              headers={'Authorization': f'bearer {token}', 'Content-Type': 'application/json', 'Accept': 'application/vnd.github+json'}
+          )
+          with urllib.request.urlopen(req) as r:
+              comment = json.loads(r.read())
+          print(f"✅ コメント追加: Issue #{issue_number} → comment #{comment['id']}")
+
+          with open('/tmp/result.json', 'w') as f:
+              json.dump({'action': 'add_comment', 'issue_number': issue_number, 'comment_id': comment['id'], 'url': comment['html_url']}, f, ensure_ascii=False, indent=2)
+          PYEOF
+        env:
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+          PAYLOAD: ${{ steps.parse.outputs.payload }}
+
       # ── run_skill ──────────────────────────────────────────
       # Claude自身が次のアクションのリクエストを書き込むスキルチェーン用
       - name: run_skill
@@ -227,6 +258,7 @@ jobs:
           steps.parse.outputs.action != 'write_file' &&
           steps.parse.outputs.action != 'write_memory' &&
           steps.parse.outputs.action != 'publish_essay' &&
+          steps.parse.outputs.action != 'add_comment' &&
           steps.parse.outputs.action != 'run_skill'
         run: |
           echo '{"error":"unknown action","action":"${{ steps.parse.outputs.action }}"}' > /tmp/result.json
@@ -309,6 +341,11 @@ jobs:
               mkdir -p /tmp/tr/outbox/essays
               cp /tmp/tr_essay/content.txt "/tmp/tr/outbox/essays/$FNAME"
               echo "✅ publish_essay → outbox/essays/$FNAME"
+              ;;
+            add_comment)
+              mkdir -p /tmp/tr/outbox
+              cp /tmp/result.json /tmp/tr/outbox/comment_result.json
+              echo "✅ コメント結果 → outbox/comment_result.json"
               ;;
             run_skill)
               mkdir -p /tmp/tr/outbox

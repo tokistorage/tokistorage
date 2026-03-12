@@ -1,1 +1,1 @@
-{"action": "write_memory", "payload": {"path": "daily/2026-03-12.md", "content": "\n## セルフストレージ進捗\n- 1箇所目：全撤去完了 ✅（残り3箇所）", "mode": "append"}}
+{"action": "fetch_project", "payload": {}}
