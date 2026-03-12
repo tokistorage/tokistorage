@@ -136,7 +136,7 @@ jobs:
           if 'errors' in meta:
               raise Exception(f"Project取得エラー: {meta['errors']}")
           project_id = meta['data']['user']['projectV2']['id']
-          result = gql('''mutation($p:ID!, $c:String!) {
+          result = gql('''mutation($p:ID!, $c:ID!) {
             addProjectV2ItemById(input: {projectId: $p, contentId: $c}) {
               item { id }
             }
