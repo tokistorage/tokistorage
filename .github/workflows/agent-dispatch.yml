@@ -28,7 +28,11 @@ jobs:
             PAYLOAD="{}"
           fi
           echo "action=$ACTION" >> $GITHUB_OUTPUT
-          echo "payload=$PAYLOAD" >> $GITHUB_OUTPUT
+          {
+            echo "payload<<EOF_PAYLOAD"
+            echo "$PAYLOAD"
+            echo "EOF_PAYLOAD"
+          } >> $GITHUB_OUTPUT
           echo "▶ action=$ACTION"
 
       # ── fetch_project ──────────────────────────────────────
