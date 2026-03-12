@@ -1,1 +1,8 @@
-{"action": "write_memory", "payload": {"path": "daily/2026-03-12.md", "content": "\n- ホンダファイナンス：査定の話を伝達済み → 3/19に折り返し連絡", "mode": "append"}, "_ts": 1773299933}
+{
+  "action": "write_memory",
+  "payload": {
+    "path": "daily/2026-03-12.md",
+    "content": "\n## エッセイ執筆（163本目）\n- タイトル: 計画と実行のあいだ ── 無気力・利己・身体感覚を組み込む設計論\n- slug: plan-and-flexible-execution\n- カテゴリ: 人生の節目\n- テーマ: 計画の硬直性／無気力の設計組み込み／利己と操作の見極め／提案と傾聴の境界／自他の変容\n- 日英両版をlp/にpush済み（163本）",
+    "mode": "append"
+  }
+}
