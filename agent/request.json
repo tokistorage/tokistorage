@@ -1,7 +1,1 @@
-{
-  "action": "close_issue",
-  "payload": {
-    "issue_number": 1,
-    "repo": "tokistorage/tokistorage"
-  }
-}
+{"action": "fetch_project", "payload": {}}
