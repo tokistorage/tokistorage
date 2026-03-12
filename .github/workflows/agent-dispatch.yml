@@ -199,6 +199,55 @@ jobs:
         env:
           PAYLOAD: ${{ steps.parse.outputs.payload }}
 
+      # ── reorder_tasks ──────────────────────────────────────
+      - name: reorder_tasks
+        if: steps.parse.outputs.action == 'reorder_tasks'
+        run: |
+          python3 << 'PYEOF'
+          import json, urllib.request, os
+
+          payload = json.loads(os.environ.get('PAYLOAD', '{}'))
+          token = os.environ['PAT_TOKEN']
+
+          def gql(query, variables=None):
+              body = {'query': query}
+              if variables: body['variables'] = variables
+              req = urllib.request.Request(
+                  'https://api.github.com/graphql',
+                  data=json.dumps(body).encode(),
+                  headers={'Authorization': f'bearer {token}', 'Content-Type': 'application/json'}
+              )
+              with urllib.request.urlopen(req) as r:
+                  return json.loads(r.read())
+
+          meta = gql('{ user(login: "tokistorage") { projectV2(number: 2) { id } } }')
+          project_id = meta['data']['user']['projectV2']['id']
+
+          # ordered_ids: 上から順に並べたいitem IDのリスト
+          ordered_ids = payload.get('ordered_ids', [])
+          results = []
+          prev_id = None
+          for item_id in ordered_ids:
+              variables = {'projectId': project_id, 'itemId': item_id}
+              if prev_id:
+                  variables['afterId'] = prev_id
+              r = gql('''mutation($projectId:ID!,$itemId:ID!,$afterId:ID){
+                updateProjectV2ItemPosition(input:{projectId:$projectId,itemId:$itemId,afterId:$afterId}){
+                  items { totalCount }
+                }
+              }''', variables)
+              ok = 'errors' not in r
+              results.append({'item_id': item_id, 'ok': ok})
+              print(f"{'✅' if ok else '❌'} {item_id}")
+              prev_id = item_id
+
+          with open('/tmp/result.json', 'w') as f:
+              json.dump({'action': 'reorder_tasks', 'results': results}, f, ensure_ascii=False, indent=2)
+          PYEOF
+        env:
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+          PAYLOAD: ${{ steps.parse.outputs.payload }}
+
       # ── add_comment ────────────────────────────────────────
       - name: add_comment
         if: steps.parse.outputs.action == 'add_comment'
@@ -260,6 +309,7 @@ jobs:
           steps.parse.outputs.action != 'write_memory' &&
           steps.parse.outputs.action != 'publish_essay' &&
           steps.parse.outputs.action != 'add_comment' &&
+          steps.parse.outputs.action != 'reorder_tasks' &&
           steps.parse.outputs.action != 'run_skill'
         run: |
           echo '{"error":"unknown action","action":"${{ steps.parse.outputs.action }}"}' > /tmp/result.json
@@ -342,6 +392,11 @@ jobs:
               mkdir -p /tmp/tr/outbox/essays
               cp /tmp/tr_essay/content.txt "/tmp/tr/outbox/essays/$FNAME"
               echo "✅ publish_essay → outbox/essays/$FNAME"
+              ;;
+            reorder_tasks)
+              mkdir -p /tmp/tr/outbox
+              cp /tmp/result.json /tmp/tr/outbox/reorder_result.json
+              echo "✅ 並び替え結果 → outbox/reorder_result.json"
               ;;
             add_comment)
               mkdir -p /tmp/tr/outbox
