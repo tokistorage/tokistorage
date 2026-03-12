@@ -138,7 +138,7 @@ GitHub Actions経由で実行できる操作。
 
 ### アクション実行手順
 ```bash
-cd tokistorage
+cd /home/claude/tokistorage
 cat > agent/request.json << 'JSON'
 {"action": "fetch_project", "payload": {}}
 JSON
@@ -146,10 +146,19 @@ git add agent/request.json
 git commit -m "agent: fetch_project"
 git push https://$PAT@github.com/tokistorage/tokistorage.git main
 
-# 30〜90秒後に結果確認
-cd /home/claude/tr
-git pull https://$PAT@github.com/tokistorage/tr.git main
-cat .agent/last_run.json
+# ポーリングで完了を待つ（5秒おき、最大2分）
+BEFORE=$(cat /home/claude/tr/.agent/last_run.json 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('last_run',''))" 2>/dev/null || echo "")
+for i in $(seq 1 24); do
+  sleep 5
+  cd /home/claude/tr && git pull https://$PAT@github.com/tokistorage/tr.git main -q 2>/dev/null
+  AFTER=$(cat .agent/last_run.json 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('last_run',''))" 2>/dev/null || echo "")
+  if [ "$AFTER" != "$BEFORE" ] && [ -n "$AFTER" ]; then
+    echo "✅ 完了 (${i}回目 / $((i*5))秒)"
+    cat .agent/last_run.json
+    break
+  fi
+  echo "⏳ 待機中... (${i}回目 / $((i*5))秒)"
+done
 ```
 
 ---
