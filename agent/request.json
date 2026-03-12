@@ -1,8 +1,1 @@
-{
-  "action": "write_memory",
-  "payload": {
-    "path": "daily/2026-03-12.md",
-    "content": "# 2026-03-12\n\n## 今日やったこと\n- Claude.ai → GitHub フローの構築・検証完了\n- public Actions → private repo 構成を確立\n- tr リポジトリの構造設計\n- エージェントシステム強化: write_memory / publish_essay / run_skill アクション追加\n- エッセイ「マルチアカウントエージェント」執筆・公開（161本目）\n  - slug: multi-account-agent\n  - テーマ: 複数Claude.aiアカウントが同一tr/リポジトリを共有する設計論\n  - 日英両版をlp/にpush済み\n- agent-dispatch.yml の env重複エラーを修正\n- エッセイ「人格の発生」執筆・公開（162本目）\n  - slug: personality-emergence\n  - テーマ: エージェントが記憶を持ち継続する存在になった瞬間\n  - カテゴリ: 技術・設計\n  - 日英両版をlp/にpush済み\n\n## 確認済み構成\n- public: tokistorage/tokistorage（Actionsエンジン）\n- private: tr（データ・スキル保存）\n- 利用可能アクション: fetch_project / update_task / create_issue / write_file / write_memory / publish_essay / run_skill\n\n## 次にやること\n- [ ] GitHub ProjectのIssueクローズ/ステータス更新をActionsから実行\n- [ ] ブローシャのHTMLテンプレート作成\n- [ ] 朝のブリーフィングフロー1回通しで検証\n",
-    "mode": "overwrite"
-  }
-}
+{"action": "fetch_project", "payload": {}}
