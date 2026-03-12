@@ -1,7 +1,1 @@
-{
-  "action": "create_issue",
-  "payload": {
-    "title": "部屋の片付け テスト",
-    "body": "Project追加テスト用"
-  }
-}
+{"action": "close_issue", "payload": {"issue_number": 3, "repo": "tokistorage/tokistorage"}}
