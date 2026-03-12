@@ -1,0 +1,107 @@
+name: Morning Briefing
+
+on:
+  schedule:
+    - cron: '0 22 * * *'   # JST 07:00 (UTC 22:00 前日)
+  workflow_dispatch:
+
+jobs:
+  briefing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch latest project data
+        env:
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+        run: |
+          curl -s -H "Authorization: bearer $PAT_TOKEN" \
+            -H "Content-Type: application/json" -X POST \
+            -d '{"query":"{ user(login: \"tokistorage\") { projectV2(number: 2) { title items(first: 100) { nodes { id content { ... on Issue { title state number url } ... on DraftIssue { title } } fieldValues(first:5){ nodes { ... on ProjectV2ItemFieldSingleSelectValue { name field { ... on ProjectV2FieldCommon { name } } } } } } } } } }"}' \
+            https://api.github.com/graphql > /tmp/project_raw.json
+
+      - name: Generate briefing
+        run: |
+          python3 << 'PYEOF'
+          import json, datetime
+
+          with open('/tmp/project_raw.json') as f:
+              raw = json.load(f)
+
+          nodes = raw['data']['user']['projectV2']['items']['nodes']
+          tasks = []
+          for n in nodes:
+              c = n.get('content') or {}
+              status = ''
+              for fv in (n.get('fieldValues') or {}).get('nodes', []):
+                  if fv and fv.get('field', {}).get('name') == 'Status':
+                      status = fv.get('name', '')
+              tasks.append({
+                  'id': n['id'],
+                  'title': c.get('title', '(draft)'),
+                  'state': c.get('state', ''),
+                  'status': status,
+                  'number': c.get('number'),
+                  'url': c.get('url'),
+              })
+
+          now = datetime.datetime.utcnow()
+          jst = now + datetime.timedelta(hours=9)
+
+          todo = [t for t in tasks if t['status'] == 'Todo' and t['state'] == 'OPEN']
+          in_progress = [t for t in tasks if t['status'] == 'In Progress']
+          done = [t for t in tasks if t['status'] == 'Done']
+
+          # カテゴリ推定
+          def categorize(title):
+              cats = {
+                  '財務・税務': ['確定申告','還付','税','退職金','助成金','補助金','給付','口座'],
+                  '不動産': ['ストレージ','物件','賃貸','不動産','引越','廃棄','整理'],
+                  '事業': ['事業','会社','登記','契約','請求','営業','取引'],
+                  '自治会': ['自治会','総会','精算','補助金'],
+              }
+              for cat, keywords in cats.items():
+                  if any(k in title for k in keywords):
+                      return cat
+              return 'その他'
+
+          from collections import defaultdict
+          cat_count = defaultdict(int)
+          for t in todo:
+              cat_count[categorize(t['title'])] += 1
+
+          briefing = {
+              'date': jst.strftime('%Y-%m-%d'),
+              'generated_at': now.strftime('%Y-%m-%dT%H:%M:%SZ'),
+              'total': len(tasks),
+              'todo_count': len(todo),
+              'in_progress_count': len(in_progress),
+              'done_count': len(done),
+              'top5': [{'id': t['id'], 'title': t['title'], 'number': t['number'], 'url': t['url']} for t in todo[:5]],
+              'categories': dict(cat_count),
+              'tasks': tasks,
+          }
+
+          with open('/tmp/briefing.json', 'w') as f:
+              json.dump(briefing, f, ensure_ascii=False, indent=2)
+
+          print(f"📋 {jst.strftime('%Y-%m-%d')} ブリーフィング生成完了")
+          print(f"  全{len(tasks)}件 | Todo:{len(todo)} | In Progress:{len(in_progress)} | Done:{len(done)}")
+          print(f"  Top5: {[t['title'] for t in todo[:5]]}")
+          PYEOF
+
+      - name: Push to private repo
+        env:
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+        run: |
+          git clone https://x-access-token:$PAT_TOKEN@github.com/tokistorage/tr.git /tmp/tr
+          cd /tmp/tr
+          cp /tmp/briefing.json project/cache/project.json
+          mkdir -p .agent
+          echo "{\"last_briefing\": \"$(date -u '+%Y-%m-%dT%H:%M:%SZ')\"}" > .agent/last_run.json
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add -A
+          git diff --cached --quiet || git commit -m "briefing: $(date '+%Y-%m-%dT%H:%M:%S') [skip ci]"
+          git push
+          echo "✅ ブリーフィングをprivate repoに保存"

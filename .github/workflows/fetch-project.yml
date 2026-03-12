@@ -1,0 +1,71 @@
+name: Fetch GitHub Project
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 */6 * * *'   # 6時間ごと自動更新
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch Project Items
+        env:
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+        run: |
+          curl -s -H "Authorization: bearer $PAT_TOKEN" \
+            -H "Content-Type: application/json" \
+            -X POST \
+            -d '{"query":"{ user(login: \"tokistorage\") { projectV2(number: 2) { title items(first: 100) { nodes { id content { ... on Issue { title state number url } ... on DraftIssue { title } ... on PullRequest { title state number url } } fieldValues(first: 10) { nodes { ... on ProjectV2ItemFieldSingleSelectValue { name field { ... on ProjectV2FieldCommon { name } } } ... on ProjectV2ItemFieldTextValue { text field { ... on ProjectV2FieldCommon { name } } } } } } } } } }"}' \
+            https://api.github.com/graphql > project-data.json
+
+      - name: Save to private repo
+        env:
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+        run: |
+          python3 << 'PYEOF'
+          import json, datetime
+
+          with open('project-data.json') as f:
+              raw = json.load(f)
+
+          nodes = raw['data']['user']['projectV2']['items']['nodes']
+          tasks = []
+          for n in nodes:
+              c = n.get('content') or {}
+              status = ''
+              for fv in (n.get('fieldValues') or {}).get('nodes', []):
+                  if fv and fv.get('field', {}).get('name') == 'Status':
+                      status = fv.get('name', '')
+              tasks.append({
+                  'id': n['id'],
+                  'title': c.get('title', '(draft)'),
+                  'state': c.get('state', ''),
+                  'status': status,
+                  'number': c.get('number'),
+                  'url': c.get('url'),
+              })
+
+          result = {
+              'project': raw['data']['user']['projectV2']['title'],
+              'fetched_at': datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+              'total': len(tasks),
+              'tasks': tasks,
+          }
+
+          with open('/tmp/project_cache.json', 'w') as f:
+              json.dump(result, f, ensure_ascii=False, indent=2)
+          print(f"✅ {len(tasks)}件 処理完了")
+          PYEOF
+
+          git clone https://x-access-token:$PAT_TOKEN@github.com/tokistorage/tr.git /tmp/tr
+          cd /tmp/tr
+          cp /tmp/project_cache.json project/cache/project.json
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add project/cache/project.json
+          git diff --cached --quiet || git commit -m "fetch: $(date '+%Y-%m-%dT%H:%M:%S') [skip ci]"
+          git push
+          echo "✅ private repo更新完了"
