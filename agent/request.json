@@ -1,1 +1,1 @@
-{"action": "add_comment", "payload": {"repo": "tokistorage/tokistorage.github.io", "issue_number": 12, "body": "## 2026-03-12 進捗\n\n- 1箇所目：全撤去完了 ✅（残り3箇所）\n- 車載した荷物は実父宅に保管を相談予定\n\n_2026-03-12 by agent_"}, "_ts": 1773298409}
+{"action": "write_memory", "payload": {"path": "daily/2026-03-12.md", "content": "\n- ホンダファイナンス：査定の話を伝達済み → 3/19に折り返し連絡", "mode": "append"}, "_ts": 1773299933}
