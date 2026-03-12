@@ -2,7 +2,8 @@
   "action": "create_issue",
   "payload": {
     "title": "部屋の片付け",
-    "body": "部屋の片付けをする。",
-    "labels": []
+    "body": "",
+    "labels": [],
+    "repo": "tokistorage/tokistorage.github.io"
   }
 }
