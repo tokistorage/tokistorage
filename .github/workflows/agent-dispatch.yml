@@ -44,6 +44,54 @@ jobs:
           TOTAL=$(python3 -c "import json; d=json.load(open('/tmp/result.json')); print(len(d['data']['user']['projectV2']['items']['nodes']))")
           echo "✅ fetch_project 完了: ${TOTAL}件"
 
+      # ── delete_project_items ───────────────────────────────
+      - name: delete_project_items
+        if: steps.parse.outputs.action == 'delete_project_items'
+        env:
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+          PAYLOAD: ${{ steps.parse.outputs.payload }}
+        run: |
+          python3 << 'PYEOF'
+import json, urllib.request, os
+
+payload = json.loads(os.environ.get('PAYLOAD', '{}'))
+token = os.environ['PAT_TOKEN']
+item_ids = payload.get('item_ids', [])
+
+def gql(query, variables=None):
+    body = {'query': query}
+    if variables: body['variables'] = variables
+    req = urllib.request.Request(
+        'https://api.github.com/graphql',
+        data=json.dumps(body).encode(),
+        headers={'Authorization': f'bearer {token}', 'Content-Type': 'application/json'}
+    )
+    with urllib.request.urlopen(req) as r:
+        return json.loads(r.read())
+
+# Project ID取得
+meta = gql('{ user(login: "tokistorage") { projectV2(number: 2) { id } } }')
+project_id = meta['data']['user']['projectV2']['id']
+
+results = []
+for item_id in item_ids:
+    result = gql('''mutation($p:ID!, $i:ID!) {
+      deleteProjectV2Item(input: {projectId: $p, itemId: $i}) {
+        deletedItemId
+      }
+    }''', {'p': project_id, 'i': item_id})
+    if 'errors' in result:
+        results.append({'id': item_id, 'status': 'error', 'error': str(result['errors'])})
+        print(f"❌ {item_id}: {result['errors']}")
+    else:
+        results.append({'id': item_id, 'status': 'deleted'})
+        print(f"✅ 削除: {item_id}")
+
+with open('/tmp/result.json', 'w') as f:
+    json.dump({'action': 'delete_project_items', 'deleted': len([r for r in results if r['status']=='deleted']), 'results': results}, f, ensure_ascii=False, indent=2)
+print(f"✅ 完了: {len([r for r in results if r['status']=='deleted'])}/{len(item_ids)}件削除")
+PYEOF
+
       # ── update_task ────────────────────────────────────────
       - name: update_task
         if: steps.parse.outputs.action == 'update_task'
@@ -374,7 +422,8 @@ jobs:
           steps.parse.outputs.action != 'add_comment' &&
           steps.parse.outputs.action != 'close_issue' &&
           steps.parse.outputs.action != 'reorder_tasks' &&
-          steps.parse.outputs.action != 'run_skill'
+          steps.parse.outputs.action != 'run_skill' &&
+          steps.parse.outputs.action != 'delete_project_items'
         run: |
           echo '{"error":"unknown action","action":"${{ steps.parse.outputs.action }}"}' > /tmp/result.json
           echo "❌ 不明なアクション: ${{ steps.parse.outputs.action }}"
