@@ -103,11 +103,12 @@ jobs:
           title = payload.get('title', 'New Task')
           body = payload.get('body', '')
           labels = payload.get('labels', [])
+          repo = payload.get('repo', 'tokistorage/tokistorage.github.io')
 
           issue_data = {'title': title, 'body': body}
           if labels: issue_data['labels'] = labels
           req = urllib.request.Request(
-              'https://api.github.com/repos/tokistorage/tokistorage/issues',
+              f'https://api.github.com/repos/{repo}/issues',
               data=json.dumps(issue_data).encode(),
               headers={'Authorization': f'bearer {token}', 'Content-Type': 'application/json', 'Accept': 'application/vnd.github+json'}
           )

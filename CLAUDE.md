@@ -93,11 +93,12 @@ GitHub Actions経由で実行できる操作。
   "payload": {
     "title": "タスクタイトル",
     "body": "詳細",
-    "labels": ["enhancement"]
+    "labels": ["enhancement"],
+    "repo": "tokistorage/tokistorage.github.io"
   }
 }
 ```
-→ `tokistorage/tokistorage` リポジトリに Issue を作成
+→ `repo` で指定したリポジトリに Issue を作成（省略時は `tokistorage/tokistorage.github.io`）
 
 ### ファイル操作
 ```json
