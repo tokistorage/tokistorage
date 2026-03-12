@@ -1,7 +1,7 @@
 {
   "action": "create_issue",
   "payload": {
-    "title": "部屋の片付け",
-    "body": ""
+    "title": "部屋の片付け テスト",
+    "body": "Project追加テスト用"
   }
 }
