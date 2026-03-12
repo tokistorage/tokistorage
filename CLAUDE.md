@@ -148,29 +148,48 @@ GitHub Actions経由で実行できる操作。
 → `tr/outbox/essays/` にエッセイHTMLを保存（その後 sync-outbox で公開）
 
 ### アクション実行手順
+
+**必ず `agent/push.sh` 経由で実行すること。直接 git push しない。**
+
 ```bash
 cd /home/claude/tokistorage
+
+# 1. request.json を書く
 cat > agent/request.json << 'JSON'
 {"action": "fetch_project", "payload": {}}
 JSON
-git add agent/request.json
-git commit -m "agent: fetch_project"
-git push https://$PAT@github.com/tokistorage/tokistorage.git main
 
-# ポーリングで完了を待つ（5秒おき、最大2分）
-BEFORE=$(cat /home/claude/tr/.agent/last_run.json 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('last_run',''))" 2>/dev/null || echo "")
-for i in $(seq 1 24); do
-  sleep 5
-  cd /home/claude/tr && git pull https://$PAT@github.com/tokistorage/tr.git main -q 2>/dev/null
-  AFTER=$(cat .agent/last_run.json 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('last_run',''))" 2>/dev/null || echo "")
-  if [ "$AFTER" != "$BEFORE" ] && [ -n "$AFTER" ]; then
-    echo "✅ 完了 (${i}回目 / $((i*5))秒)"
-    cat .agent/last_run.json
-    break
-  fi
-  echo "⏳ 待機中... (${i}回目 / $((i*5))秒)"
-done
+# 2. push.sh で送信（_t付与・YAMLチェック・pushを一括実行）
+PAT=xxx bash agent/push.sh
 ```
+
+push後はポーリングせず、ユーザーに結果確認を依頼する。
+
+```bash
+# 3. ユーザーから「成功した」と聞いたら結果を取得
+cd /home/claude/tr
+git pull https://$PAT@github.com/tokistorage/tr.git main -q
+```
+
+### エラー時の対処フロー
+
+Actionsが失敗した場合、ユーザーはGitHubの通知メール（または Actionsタブ）からエラー内容を確認できる。
+
+```
+通知メール or Actionsタブ
+  → 該当のRunを開く
+  → 赤くなっているステップを確認
+  → エラーメッセージをClaudeに共有
+```
+
+**よくある失敗パターン:**
+
+| 症状 | 原因 | 対処 |
+|---|---|---|
+| 0秒・ログなし | YAMLシンタックスエラー | push.sh の簡易チェックで検出される |
+| 0秒・ログなし | PAT_TOKEN 未設定/期限切れ | Settings → Secrets で確認・更新 |
+| ステップ途中で失敗 | Pythonエラー / API権限不足 | ログのエラーメッセージをClaudeに共有 |
+| Actionsが起動しない | request.json が変更されていない | push.sh が _t を自動付与するので防止済み |
 
 ---
 
