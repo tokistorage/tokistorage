@@ -1,1 +1,1 @@
-{"action": "reorder_tasks", "payload": {"ordered_ids": ["PVTI_lAHOD5OzBM4BRKWuzgm8Sjo", "PVTI_lAHOD5OzBM4BRKWuzgm8ShM", "PVTI_lAHOD5OzBM4BRKWuzgm8Shk", "PVTI_lAHOD5OzBM4BRKWuzgm8SkA", "PVTI_lAHOD5OzBM4BRKWuzgm8SiI"]}, "_ts": 1773295772}
+{"action": "update_task", "payload": {"updates": [{"task_id": "PVTI_lAHOD5OzBM4BRKWuzgm8Sjo", "new_status": "In Progress"}]}, "_ts": 1773295855}
