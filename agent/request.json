@@ -1,1 +1,1 @@
-{"action": "add_comment", "payload": {"issue_number": 12, "repo": "tokistorage/tokistorage.github.io", "body": "3/13時点：今日は対応なし。明日（3/14）以降に着手予定。"}, "_t": "2026-03-13T02:12:21Z"}
+{"action": "write_memory", "payload": {"path": "daily/2026-03-13.md", "content": "\n\n## エッセイ167本目 公開済み\n- タイトル：「道具は消耗する、インフラは育つ ── GitHubとClaudeで作った、コストゼロの自律システム」\n- slug: claude-code-boundary\n- カテゴリ：技術・設計\n- 日英両版公開済み\n- 朝の雑談（AIツールの課金ループ・無料迂回哲学）からそのままエッセイへ昇華\n- Agent A/Bペルソナ対話で9章構成に深化させた\n- CTAブロックを初めて本文内に実装", "mode": "append"}, "_t": "2026-03-13T02:29:40Z"}
