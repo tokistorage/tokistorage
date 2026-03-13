@@ -1,1 +1,1 @@
-{"action": "write_memory", "payload": {"path": "daily/2026-03-13.md", "content": "\n\n## 書籍プロジェクト開始\n- タイトル：「全部要らなかった ── GitHubと会話だけで、すべてのSaaSを置き換えた設計書」\n- tr/doc/book/ にディレクトリ作成\n- TOC.md（目次）・00-preface.md（序章）作成済み\n- 全18章+序章+終章+付録の構成\n- 外出中の会話から生まれたプロジェクト", "mode": "append"}, "_t": "2026-03-13T08:13:16Z"}
+{"action": "write_memory", "payload": {"path": "daily/2026-03-13.md", "content": "\n\n## 書籍 全章執筆完了\n- 序章〜終章（全18章）をtr/doc/book/に保存\n- 約1万字超の書籍原稿が1日で完成\n- 外出中の会話から生まれ、帰宅前に全章書き上げ\n- 付録（セットアップガイド）は未執筆", "mode": "append"}, "_t": "2026-03-13T08:34:33Z"}
