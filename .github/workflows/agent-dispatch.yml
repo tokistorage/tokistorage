@@ -26,6 +26,10 @@ on:
         description: 'Longitude'
         required: false
         default: ''
+      weather:
+        description: 'Weather (e.g. 快晴 10℃)'
+        required: false
+        default: ''
 
 jobs:
   dispatch:
@@ -42,7 +46,8 @@ jobs:
             PLACE="${{ github.event.inputs.place }}"
             LAT="${{ github.event.inputs.lat }}"
             LNG="${{ github.event.inputs.lng }}"
-            PAYLOAD="{\"text\": \"$TEXT\", \"place\": \"$PLACE\", \"lat\": \"$LAT\", \"lng\": \"$LNG\"}"
+            WEATHER="${{ github.event.inputs.weather }}"
+            PAYLOAD="{\"text\": \"$TEXT\", \"place\": \"$PLACE\", \"lat\": \"$LAT\", \"lng\": \"$LNG\", \"weather\": \"$WEATHER\"}"
           elif [ -f agent/request.json ]; then
             ACTION=$(python3 -c "import sys,json; d=json.load(open('agent/request.json')); print(d.get('action','fetch_project'))")
             PAYLOAD=$(python3 -c "import sys,json; d=json.load(open('agent/request.json')); print(json.dumps(d.get('payload',{})))")
@@ -593,6 +598,7 @@ jobs:
           place = payload.get('place', '').strip()
           lat = payload.get('lat', '').strip()
           lng = payload.get('lng', '').strip()
+          weather = payload.get('weather', '').strip()
 
           if not text:
               raise ValueError("text is required")
@@ -602,6 +608,9 @@ jobs:
           filename = jst.strftime('%Y-%m-%d-%H-%M') + '.md'
 
           lines = [f"# {jst.strftime('%Y-%m-%d %H:%M')} JST", "", text, ""]
+          if weather:
+              lines.append(f"🌤 {weather}")
+              lines.append("")
           if place or (lat and lng):
               lines.append("## 位置情報")
               if place:
