@@ -685,6 +685,136 @@ jobs:
         env:
           PAYLOAD: ${{ steps.parse.outputs.payload }}
 
+
+      # ── morning_briefing ──────────────────────────────────
+      - name: morning_briefing
+        if: steps.parse.outputs.action == 'morning_briefing'
+        run: |
+          python3 << 'PYEOF2'
+          import json, os, datetime, urllib.request, glob
+
+          token = os.environ['PAT_TOKEN']
+          now_jst = datetime.datetime.utcnow() + datetime.timedelta(hours=9)
+          today = now_jst.strftime('%Y-%m-%d')
+
+          # tr をクローン
+          import subprocess
+          subprocess.run(['git', 'clone', f'https://x-access-token:{token}@github.com/tokistorage/tr.git', '/tmp/tr_briefing'], check=True, capture_output=True)
+
+          # project.json 読み込み
+          with open('/tmp/tr_briefing/project/cache/project.json') as f:
+              project = json.load(f)
+
+          # inbox ファイル読み込み（直近2日分）
+          yesterday = (now_jst - datetime.timedelta(days=1)).strftime('%Y-%m-%d')
+          inbox_files = sorted(glob.glob(f'/tmp/tr_briefing/memory/inbox/{today}*.md') +
+                               glob.glob(f'/tmp/tr_briefing/memory/inbox/{yesterday}*.md') +
+                               glob.glob(f'/tmp/tr_briefing/memory/inbox/{today}*.json') +
+                               glob.glob(f'/tmp/tr_briefing/memory/inbox/{yesterday}*.json'))
+
+          inbox_content = ''
+          for path in inbox_files:
+              inbox_content += f'\n--- {os.path.basename(path)} ---\n'
+              try:
+                  raw = open(path).read()
+                  if path.endswith('.json'):
+                      # メールJSONは subject + body冒頭のみ抽出
+                      data = json.loads(raw)
+                      msgs = data.get('messages', [])
+                      for m in msgs:
+                          inbox_content += f"[{m.get('account','')}] {m.get('subject','')}\n"
+                          inbox_content += m.get('body','')[:200] + '\n'
+                  else:
+                      inbox_content += raw
+              except:
+                  pass
+
+          # プロンプト構築
+          tasks_summary = json.dumps(project['tasks'], ensure_ascii=False)
+          prompt = f"""あなたはtokistorageの専属エージェントです。
+以下のデータからブリーフィングを生成してください。
+
+# プロジェクトタスク
+{tasks_summary}
+
+# インボックス（声メモ・メール）
+{inbox_content[:6000]}
+
+# 出力フォーマット（厳守）
+
+☀️ おはようございます、卓也さん！
+
+📋 **短期計画 — {today}**
+全{project['total']}件 | Todo: X件 | In Progress: X件
+
+---
+
+⚡ **今日フォーカスすべき上位5件**
+（期限あり > In Progress > Todo の順）
+1. ...
+
+---
+
+📂 **カテゴリ別**
+- 財務・法務: X件
+- 不動産: X件
+- 事業整理・新規: X件
+- 地域・移住: X件
+- 国際・関係: X件
+- その他: X件
+
+---
+
+📥 **インボックス インサイト**
+
+🎙️ 声メモ
+（テスト・挨拶を除いた実質メモのみ）
+
+📬 メール
+（ニュースレター・GitHub通知を除く、要対応・重要情報のみ）
+
+---
+
+💬 今日は何から始めますか？"""
+
+          # GitHub Models API 呼び出し
+          body = json.dumps({
+              'model': 'openai/gpt-4o-mini',
+              'messages': [{'role': 'user', 'content': prompt}],
+              'max_tokens': 1500
+          }).encode()
+
+          req = urllib.request.Request(
+              'https://models.github.ai/inference/chat/completions',
+              data=body,
+              headers={
+                  'Authorization': f'Bearer {token}',
+                  'Content-Type': 'application/json'
+              }
+          )
+          with urllib.request.urlopen(req) as r:
+              result = json.loads(r.read())
+
+          briefing = result['choices'][0]['message']['content']
+          print('✅ ブリーフィング生成完了')
+          print(briefing[:200])
+
+          # 結果を保存
+          output = {
+              'action': 'morning_briefing',
+              'generated_at': datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+              'date': today,
+              'briefing': briefing,
+              'model': 'openai/gpt-4o-mini',
+              'inbox_files': [os.path.basename(f) for f in inbox_files]
+          }
+          with open('/tmp/result.json', 'w') as f:
+              json.dump(output, f, ensure_ascii=False, indent=2)
+          PYEOF2
+        env:
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+          PAYLOAD: ${{ steps.parse.outputs.payload }}
+
       # ── run_skill ──────────────────────────────────────────
       # Claude自身が次のアクションのリクエストを書き込むスキルチェーン用
       - name: run_skill
@@ -833,6 +963,31 @@ jobs:
                   echo "⚠️ 見つからず: $FNAME"
                 fi
               done
+              ;;
+            morning_briefing)
+              DATE=$(python3 -c "import json; print(json.load(open('/tmp/result.json'))['date'])")
+              BRIEFING=$(python3 -c "import json; print(json.load(open('/tmp/result.json'))['briefing'])")
+              mkdir -p /tmp/tr/memory/daily
+              # ブリーフィングをdailyログに保存
+              python3 << 'PYEOF2'
+import json, os
+data = json.load(open('/tmp/result.json'))
+date = data['date']
+briefing = data['briefing']
+model = data.get('model', 'unknown')
+path = f"/tmp/tr/memory/daily/{date}.md"
+header = f"# {date}\n\n> generated by {model}\n\n"
+if os.path.exists(path):
+    existing = open(path).read()
+    open(path, 'w').write(existing + "\n---\n\n" + briefing)
+else:
+    open(path, 'w').write(header + briefing)
+print(f"✅ ブリーフィング → memory/daily/{date}.md")
+PYEOF2
+              # ブリーフィングJSON自体も保存
+              mkdir -p /tmp/tr/memory/briefings
+              cp /tmp/result.json "/tmp/tr/memory/briefings/${DATE}.json"
+              echo "✅ morning_briefing → memory/briefings/${DATE}.json"
               ;;
           esac
 
