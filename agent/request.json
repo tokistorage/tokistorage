@@ -1,1 +1,1 @@
-{"action": "morning_briefing", "payload": {}, "_t": "2026-03-14T23:46:51Z"}
+{"action": "write_memory", "payload": {"path": "daily/2026-03-15.md", "content": "\n## エッセイ公開\n- タイトル: 単一障害点をなくす ── Claude・GPT・Llamaを等価に扱うエージェント設計\n- slug: no-single-point-of-failure\n- カテゴリ: 技術・設計（72本目）\n- 通算: 178本目\n- テーマ: 事業継続・持続可能性。AIサービスへの依存を単一障害点として捉え、モデルを交換可能な部品として設計する思想\n- 背景: GitHub Models (gpt-4o-mini) でブリーフィングが動くことを確認した当日に執筆\n", "mode": "append"}, "_t": "2026-03-14T23:59:15Z"}
