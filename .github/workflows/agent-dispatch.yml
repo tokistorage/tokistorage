@@ -665,6 +665,26 @@ jobs:
         env:
           PAYLOAD: ${{ steps.parse.outputs.payload }}
 
+      # ── archive_inbox ─────────────────────────────────────
+      - name: archive_inbox
+        if: steps.parse.outputs.action == 'archive_inbox'
+        run: |
+          python3 << 'PYEOF'
+          import json, os
+
+          payload = json.loads(os.environ.get('PAYLOAD', '{}'))
+          files = payload.get('files', [])  # 移動するファイル名リスト (例: ["2026-03-14-17-19.md"])
+
+          if not files:
+              raise ValueError("files is required")
+
+          with open('/tmp/result.json', 'w') as f:
+              json.dump({'action': 'archive_inbox', 'files': files, 'count': len(files)}, f, ensure_ascii=False, indent=2)
+          print(f"✅ archive_inbox: {len(files)}件をアーカイブ予定")
+          PYEOF
+        env:
+          PAYLOAD: ${{ steps.parse.outputs.payload }}
+
       # ── run_skill ──────────────────────────────────────────
       # Claude自身が次のアクションのリクエストを書き込むスキルチェーン用
       - name: run_skill
@@ -800,6 +820,19 @@ jobs:
               mkdir -p /tmp/tr/memory/inbox
               cp /tmp/tr_inbox/content.txt "/tmp/tr/memory/inbox/$FNAME"
               echo "✅ write_inbox → memory/inbox/$FNAME"
+              ;;
+            archive_inbox)
+              FILES=$(python3 -c "import json; print(chr(10).join(json.load(open('/tmp/result.json'))['files']))")
+              mkdir -p /tmp/tr/memory/inbox/archive
+              echo "$FILES" | while IFS= read -r FNAME; do
+                [ -z "$FNAME" ] && continue
+                if [ -f "/tmp/tr/memory/inbox/$FNAME" ]; then
+                  mv "/tmp/tr/memory/inbox/$FNAME" "/tmp/tr/memory/inbox/archive/$FNAME"
+                  echo "✅ アーカイブ: $FNAME"
+                else
+                  echo "⚠️ 見つからず: $FNAME"
+                fi
+              done
               ;;
           esac
 
