@@ -30,6 +30,14 @@ on:
         description: 'Weather (e.g. 快晴 10℃)'
         required: false
         default: ''
+      date:
+        description: 'Date (e.g. 2026/03/14)'
+        required: false
+        default: ''
+      time:
+        description: 'Time (e.g. 19:20:36 GMT+9)'
+        required: false
+        default: ''
 
 jobs:
   dispatch:
@@ -47,7 +55,9 @@ jobs:
             LAT="${{ github.event.inputs.lat }}"
             LNG="${{ github.event.inputs.lng }}"
             WEATHER="${{ github.event.inputs.weather }}"
-            PAYLOAD="{\"text\": \"$TEXT\", \"place\": \"$PLACE\", \"lat\": \"$LAT\", \"lng\": \"$LNG\", \"weather\": \"$WEATHER\"}"
+            DATE="${{ github.event.inputs.date }}"
+            TIME="${{ github.event.inputs.time }}"
+            PAYLOAD="{\"text\": \"$TEXT\", \"place\": \"$PLACE\", \"lat\": \"$LAT\", \"lng\": \"$LNG\", \"weather\": \"$WEATHER\", \"date\": \"$DATE\", \"time\": \"$TIME\"}"
           elif [ -f agent/request.json ]; then
             ACTION=$(python3 -c "import sys,json; d=json.load(open('agent/request.json')); print(d.get('action','fetch_project'))")
             PAYLOAD=$(python3 -c "import sys,json; d=json.load(open('agent/request.json')); print(json.dumps(d.get('payload',{})))")
@@ -599,15 +609,37 @@ jobs:
           lat = payload.get('lat', '').strip()
           lng = payload.get('lng', '').strip()
           weather = payload.get('weather', '').strip()
+          date_str = payload.get('date', '').strip()
+          time_str = payload.get('time', '').strip()
 
           if not text:
               raise ValueError("text is required")
 
           now = datetime.datetime.utcnow()
           jst = now + datetime.timedelta(hours=9)
-          filename = jst.strftime('%Y-%m-%d-%H-%M') + '.md'
 
-          lines = [f"# {jst.strftime('%Y-%m-%d %H:%M')} JST", "", text, ""]
+          # ショートカットから日時が渡された場合はそちらを優先（オフライン記録の場合）
+          if date_str and time_str:
+              timestamp = f"{date_str} {time_str}"
+              # ファイル名用にdatetimeをパース試みる（失敗したらサーバー時刻）
+              try:
+                  import re
+                  # "2026/03/14 19:20" or "2026/03/14 19:20:36 GMT+9:18:59" などに対応
+                  m = re.match(r'(\d{4})[/\-](\d{2})[/\-](\d{2})\s+(\d{2}):(\d{2})', f"{date_str} {time_str}")
+                  if m:
+                      y,mo,d,h,mi = m.groups()
+                      filename = f"{y}-{mo}-{d}-{h}-{mi}.md"
+                      display_time = f"{y}-{mo}-{d} {h}:{mi} (現地時刻)"
+                  else:
+                      raise ValueError("parse failed")
+              except:
+                  filename = jst.strftime('%Y-%m-%d-%H-%M') + '.md'
+                  display_time = jst.strftime('%Y-%m-%d %H:%M') + ' JST'
+          else:
+              filename = jst.strftime('%Y-%m-%d-%H-%M') + '.md'
+              display_time = jst.strftime('%Y-%m-%d %H:%M') + ' JST'
+
+          lines = [f"# {display_time}", "", text, ""]
           if weather:
               lines.append(f"🌤 {weather}")
               lines.append("")
