@@ -10,6 +10,10 @@ on:
         description: 'Action to run'
         required: false
         default: 'fetch_project'
+      inbox_text:
+        description: 'Inbox text (voice memo)'
+        required: false
+        default: ''
 
 jobs:
   dispatch:
@@ -20,7 +24,10 @@ jobs:
       - name: Parse request
         id: parse
         run: |
-          if [ -f agent/request.json ]; then
+          if [ -n "${{ github.event.inputs.inbox_text }}" ]; then
+            ACTION="write_inbox"
+            PAYLOAD="{\"text\": \"${{ github.event.inputs.inbox_text }}\"}"
+          elif [ -f agent/request.json ]; then
             ACTION=$(python3 -c "import sys,json; d=json.load(open('agent/request.json')); print(d.get('action','fetch_project'))")
             PAYLOAD=$(python3 -c "import sys,json; d=json.load(open('agent/request.json')); print(json.dumps(d.get('payload',{})))")
           else
@@ -558,6 +565,37 @@ jobs:
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           PAYLOAD: ${{ steps.parse.outputs.payload }}
 
+      # ── write_inbox ───────────────────────────────────────
+      - name: write_inbox
+        if: steps.parse.outputs.action == 'write_inbox'
+        run: |
+          python3 << 'PYEOF'
+          import json, os, datetime
+
+          payload = json.loads(os.environ.get('PAYLOAD', '{}'))
+          text = payload.get('text', '').strip()
+
+          if not text:
+              raise ValueError("text is required")
+
+          now = datetime.datetime.utcnow()
+          # JSTに変換（+9h）
+          jst = now + datetime.timedelta(hours=9)
+          filename = jst.strftime('%Y-%m-%d-%H-%M') + '.md'
+          content = f"# {jst.strftime('%Y-%m-%d %H:%M')} JST\n\n{text}\n"
+
+          os.makedirs('/tmp/tr_inbox', exist_ok=True)
+          with open('/tmp/tr_inbox/filename.txt', 'w') as f:
+              f.write(filename)
+          with open('/tmp/tr_inbox/content.txt', 'w') as f:
+              f.write(content)
+          with open('/tmp/result.json', 'w') as f:
+              json.dump({'action': 'write_inbox', 'filename': filename, 'size': len(text)}, f, ensure_ascii=False, indent=2)
+          print(f"✅ write_inbox: inbox/{filename} ({len(text)} chars)")
+          PYEOF
+        env:
+          PAYLOAD: ${{ steps.parse.outputs.payload }}
+
       # ── run_skill ──────────────────────────────────────────
       # Claude自身が次のアクションのリクエストを書き込むスキルチェーン用
       - name: run_skill
@@ -687,6 +725,12 @@ jobs:
               mkdir -p /tmp/tr/outbox
               cp /tmp/result.json /tmp/tr/outbox/send_email_result.json
               echo "✅ send_email結果 → outbox/send_email_result.json"
+              ;;
+            write_inbox)
+              FNAME=$(cat /tmp/tr_inbox/filename.txt)
+              mkdir -p /tmp/tr/memory/inbox
+              cp /tmp/tr_inbox/content.txt "/tmp/tr/memory/inbox/$FNAME"
+              echo "✅ write_inbox → memory/inbox/$FNAME"
               ;;
           esac
 
