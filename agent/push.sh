@@ -59,6 +59,7 @@ print('✅ ワークフロー簡易チェック OK')
 # git push
 cd "$REPO_ROOT"
 ACTION=$(python3 -c "import json; print(json.load(open('agent/request.json')).get('action','unknown'))")
+git add -u
 git add agent/request.json
 git diff --cached --quiet && echo "⚠️  変更なし（すでにpush済み？）" || \
   git commit -m "agent: $ACTION"
