@@ -690,127 +690,156 @@ jobs:
       - name: morning_briefing
         if: steps.parse.outputs.action == 'morning_briefing'
         run: |
-          python3 << 'PYEOF2'
-          import json, os, datetime, urllib.request, glob
+          cat > /tmp/morning_briefing.py << 'PYEOF2'
+import json, os, datetime, urllib.request, glob, subprocess
 
-          token = os.environ['PAT_TOKEN']
-          now_jst = datetime.datetime.utcnow() + datetime.timedelta(hours=9)
-          today = now_jst.strftime('%Y-%m-%d')
+token = os.environ['PAT_TOKEN']
+now_jst = datetime.datetime.utcnow() + datetime.timedelta(hours=9)
+today = now_jst.strftime('%Y-%m-%d')
+yesterday = (now_jst - datetime.timedelta(days=1)).strftime('%Y-%m-%d')
 
-          # tr をクローン
-          import subprocess
-          subprocess.run(['git', 'clone', f'https://x-access-token:{token}@github.com/tokistorage/tr.git', '/tmp/tr_briefing'], check=True, capture_output=True)
+# tr をクローン
+subprocess.run(['git', 'clone', f'https://x-access-token:{token}@github.com/tokistorage/tr.git', '/tmp/tr_briefing'], check=True, capture_output=True)
 
-          # project.json 読み込み
-          with open('/tmp/tr_briefing/project/cache/project.json') as f:
-              project = json.load(f)
+# project.json 読み込み
+with open('/tmp/tr_briefing/project/cache/project.json') as f:
+    project = json.load(f)
 
-          # inbox ファイル読み込み（直近2日分）
-          yesterday = (now_jst - datetime.timedelta(days=1)).strftime('%Y-%m-%d')
-          inbox_files = sorted(glob.glob(f'/tmp/tr_briefing/memory/inbox/{today}*.md') +
-                               glob.glob(f'/tmp/tr_briefing/memory/inbox/{yesterday}*.md') +
-                               glob.glob(f'/tmp/tr_briefing/memory/inbox/{today}*.json') +
-                               glob.glob(f'/tmp/tr_briefing/memory/inbox/{yesterday}*.json'))
+tasks = project['tasks']
+todo_count = sum(1 for t in tasks if t['status'] == 'Todo')
+wip_count = sum(1 for t in tasks if t['status'] == 'In Progress')
 
-          inbox_content = ''
-          for path in inbox_files:
-              inbox_content += f'\n--- {os.path.basename(path)} ---\n'
-              try:
-                  raw = open(path).read()
-                  if path.endswith('.json'):
-                      # メールJSONは subject + body冒頭のみ抽出
-                      data = json.loads(raw)
-                      msgs = data.get('messages', [])
-                      for m in msgs:
-                          inbox_content += f"[{m.get('account','')}] {m.get('subject','')}\n"
-                          inbox_content += m.get('body','')[:200] + '\n'
-                  else:
-                      inbox_content += raw
-              except:
-                  pass
+# inbox ファイル読み込み（直近2日分、archiveは除く）
+inbox_files = sorted(
+    glob.glob(f'/tmp/tr_briefing/memory/inbox/{today}*.md') +
+    glob.glob(f'/tmp/tr_briefing/memory/inbox/{yesterday}*.md') +
+    glob.glob(f'/tmp/tr_briefing/memory/inbox/{today}*.json') +
+    glob.glob(f'/tmp/tr_briefing/memory/inbox/{yesterday}*.json')
+)
 
-          # プロンプト構築
-          tasks_summary = json.dumps(project['tasks'], ensure_ascii=False)
-          prompt = f"""あなたはtokistorageの専属エージェントです。
-以下のデータからブリーフィングを生成してください。
+inbox_content = ''
+for path in inbox_files:
+    inbox_content += f'
+--- {os.path.basename(path)} ---
+'
+    try:
+        raw = open(path).read()
+        if path.endswith('.json'):
+            data = json.loads(raw)
+            msgs = data.get('messages', [])
+            for m in msgs:
+                inbox_content += f"[{m.get('account','')}] {m.get('subject','')}
+"
+                inbox_content += m.get('body','')[:150] + '
+'
+        else:
+            inbox_content += raw
+    except:
+        pass
 
-# プロジェクトタスク
-{tasks_summary}
+tasks_json = json.dumps(tasks, ensure_ascii=False)
+format_instructions = (
+    "以下のフォーマットで出力してください:
 
-# インボックス（声メモ・メール）
-{inbox_content[:6000]}
+"
+    "☀️ おはようございます、卓也さん！
 
-# 出力フォーマット（厳守）
+"
+    f"📋 **短期計画 — {today}**
+"
+    f"全{project['total']}件 | Todo: {todo_count}件 | In Progress: {wip_count}件
 
-☀️ おはようございます、卓也さん！
+"
+    "---
 
-📋 **短期計画 — {today}**
-全{project['total']}件 | Todo: X件 | In Progress: X件
+"
+    "⚡ **今日フォーカスすべき上位5件**
+"
+    "（期限あり > In Progress > Todo の順）
+"
+    "1. ...
 
----
+"
+    "---
 
-⚡ **今日フォーカスすべき上位5件**
-（期限あり > In Progress > Todo の順）
-1. ...
-
----
-
-📂 **カテゴリ別**
-- 財務・法務: X件
+"
+    "📂 **カテゴリ別**
+"
+    "- 財務・法務: X件
 - 不動産: X件
 - 事業整理・新規: X件
-- 地域・移住: X件
+"
+    "- 地域・移住: X件
 - 国際・関係: X件
 - その他: X件
 
----
+"
+    "---
 
-📥 **インボックス インサイト**
+"
+    "📥 **インボックス インサイト**
 
-🎙️ 声メモ
+"
+    "🎙️ 声メモ
 （テスト・挨拶を除いた実質メモのみ）
 
-📬 メール
-（ニュースレター・GitHub通知を除く、要対応・重要情報のみ）
+"
+    "📬 メール
+（ニュースレター・GitHub通知を除く、要対応・重要情報のみ ⚠️付き）
 
----
+"
+    "---
 
-💬 今日は何から始めますか？"""
+"
+    "💬 今日は何から始めますか？"
+)
 
-          # GitHub Models API 呼び出し
-          body = json.dumps({
-              'model': 'openai/gpt-4o-mini',
-              'messages': [{'role': 'user', 'content': prompt}],
-              'max_tokens': 1500
-          }).encode()
+prompt = (
+    "あなたはtokistorageの専属エージェントです。
 
-          req = urllib.request.Request(
-              'https://models.github.ai/inference/chat/completions',
-              data=body,
-              headers={
-                  'Authorization': f'Bearer {token}',
-                  'Content-Type': 'application/json'
-              }
-          )
-          with urllib.request.urlopen(req) as r:
-              result = json.loads(r.read())
+"
+    "# プロジェクトタスク
+" + tasks_json + "
 
-          briefing = result['choices'][0]['message']['content']
-          print('✅ ブリーフィング生成完了')
-          print(briefing[:200])
+"
+    "# インボックス（声メモ・メール）
+" + inbox_content[:5000] + "
 
-          # 結果を保存
-          output = {
-              'action': 'morning_briefing',
-              'generated_at': datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
-              'date': today,
-              'briefing': briefing,
-              'model': 'openai/gpt-4o-mini',
-              'inbox_files': [os.path.basename(f) for f in inbox_files]
-          }
-          with open('/tmp/result.json', 'w') as f:
-              json.dump(output, f, ensure_ascii=False, indent=2)
-          PYEOF2
+"
+    "# 指示
+" + format_instructions
+)
+
+body = json.dumps({
+    'model': 'openai/gpt-4o-mini',
+    'messages': [{'role': 'user', 'content': prompt}],
+    'max_tokens': 1500
+}).encode()
+
+req = urllib.request.Request(
+    'https://models.github.ai/inference/chat/completions',
+    data=body,
+    headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+)
+with urllib.request.urlopen(req) as r:
+    result = json.loads(r.read())
+
+briefing = result['choices'][0]['message']['content']
+print('✅ ブリーフィング生成完了')
+print(briefing[:300])
+
+output = {
+    'action': 'morning_briefing',
+    'generated_at': datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+    'date': today,
+    'briefing': briefing,
+    'model': 'openai/gpt-4o-mini',
+    'inbox_files': [os.path.basename(f) for f in inbox_files]
+}
+with open('/tmp/result.json', 'w') as f:
+    json.dump(output, f, ensure_ascii=False, indent=2)
+PYEOF2
+          python3 /tmp/morning_briefing.py
         env:
           PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
           PAYLOAD: ${{ steps.parse.outputs.payload }}
