@@ -14,6 +14,18 @@ on:
         description: 'Inbox text (voice memo)'
         required: false
         default: ''
+      place:
+        description: 'Location address'
+        required: false
+        default: ''
+      lat:
+        description: 'Latitude'
+        required: false
+        default: ''
+      lng:
+        description: 'Longitude'
+        required: false
+        default: ''
 
 jobs:
   dispatch:
@@ -26,7 +38,11 @@ jobs:
         run: |
           if [ -n "${{ github.event.inputs.inbox_text }}" ]; then
             ACTION="write_inbox"
-            PAYLOAD="{\"text\": \"${{ github.event.inputs.inbox_text }}\"}"
+            TEXT="${{ github.event.inputs.inbox_text }}"
+            PLACE="${{ github.event.inputs.place }}"
+            LAT="${{ github.event.inputs.lat }}"
+            LNG="${{ github.event.inputs.lng }}"
+            PAYLOAD="{\"text\": \"$TEXT\", \"place\": \"$PLACE\", \"lat\": \"$LAT\", \"lng\": \"$LNG\"}"
           elif [ -f agent/request.json ]; then
             ACTION=$(python3 -c "import sys,json; d=json.load(open('agent/request.json')); print(d.get('action','fetch_project'))")
             PAYLOAD=$(python3 -c "import sys,json; d=json.load(open('agent/request.json')); print(json.dumps(d.get('payload',{})))")
@@ -574,15 +590,27 @@ jobs:
 
           payload = json.loads(os.environ.get('PAYLOAD', '{}'))
           text = payload.get('text', '').strip()
+          place = payload.get('place', '').strip()
+          lat = payload.get('lat', '').strip()
+          lng = payload.get('lng', '').strip()
 
           if not text:
               raise ValueError("text is required")
 
           now = datetime.datetime.utcnow()
-          # JSTに変換（+9h）
           jst = now + datetime.timedelta(hours=9)
           filename = jst.strftime('%Y-%m-%d-%H-%M') + '.md'
-          content = f"# {jst.strftime('%Y-%m-%d %H:%M')} JST\n\n{text}\n"
+
+          lines = [f"# {jst.strftime('%Y-%m-%d %H:%M')} JST", "", text, ""]
+          if place or (lat and lng):
+              lines.append("## 位置情報")
+              if place:
+                  lines.append(f"- 住所: {place}")
+              if lat and lng:
+                  lines.append(f"- 座標: {lat}, {lng}")
+                  lines.append(f"- マップ: https://maps.google.com/maps?q={lat},{lng}")
+              lines.append("")
+          content = "\n".join(lines)
 
           os.makedirs('/tmp/tr_inbox', exist_ok=True)
           with open('/tmp/tr_inbox/filename.txt', 'w') as f:
@@ -590,8 +618,8 @@ jobs:
           with open('/tmp/tr_inbox/content.txt', 'w') as f:
               f.write(content)
           with open('/tmp/result.json', 'w') as f:
-              json.dump({'action': 'write_inbox', 'filename': filename, 'size': len(text)}, f, ensure_ascii=False, indent=2)
-          print(f"✅ write_inbox: inbox/{filename} ({len(text)} chars)")
+              json.dump({'action': 'write_inbox', 'filename': filename, 'size': len(text), 'has_location': bool(place or lat)}, f, ensure_ascii=False, indent=2)
+          print(f"✅ write_inbox: inbox/{filename} ({len(text)} chars, location={'yes' if place or lat else 'no'})")
           PYEOF
         env:
           PAYLOAD: ${{ steps.parse.outputs.payload }}
