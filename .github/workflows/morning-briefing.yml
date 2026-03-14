@@ -90,18 +90,112 @@ jobs:
           print(f"  Top5: {[t['title'] for t in todo[:5]]}")
           PYEOF
 
+      - name: Fetch inbox (all accounts)
+        env:
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          BUSINESS_EMAIL: ${{ secrets.BUSINESS_EMAIL }}
+          BUSINESS_APP_PASSWORD: ${{ secrets.BUSINESS_APP_PASSWORD }}
+        run: |
+          python3 << 'PYEOF'
+          import imaplib, email, json, os, datetime
+          from email.header import decode_header
+          from email.utils import parsedate_to_datetime
+
+          accounts = [
+              {'account': 'tokistorage', 'address': os.environ['GMAIL_ADDRESS'],    'password': os.environ['GMAIL_APP_PASSWORD'],    'host': 'imap.gmail.com'},
+              {'account': 'business',    'address': os.environ['BUSINESS_EMAIL'],   'password': os.environ['BUSINESS_APP_PASSWORD'], 'host': 'imap.gmail.com'},
+          ]
+
+          def decode_str(s):
+              if s is None: return ''
+              parts = decode_header(s)
+              result = ''
+              for part, enc in parts:
+                  if isinstance(part, bytes): result += part.decode(enc or 'utf-8', errors='replace')
+                  else: result += part
+              return result
+
+          def get_body(msg):
+              if msg.is_multipart():
+                  for part in msg.walk():
+                      ct = part.get_content_type()
+                      cd = str(part.get('Content-Disposition', ''))
+                      if ct == 'text/plain' and 'attachment' not in cd:
+                          b = part.get_payload(decode=True)
+                          return b.decode(part.get_content_charset() or 'utf-8', errors='replace') if b else ''
+              else:
+                  b = msg.get_payload(decode=True)
+                  return b.decode(msg.get_content_charset() or 'utf-8', errors='replace') if b else ''
+              return ''
+
+          all_messages = []
+          summary = {}
+          for acct in accounts:
+              try:
+                  print(f"\n📬 [{acct['account']}] {acct['address']}")
+                  mail = imaplib.IMAP4_SSL(acct['host'])
+                  mail.login(acct['address'], acct['password'])
+                  mail.select('inbox')
+                  _, data = mail.search(None, 'UNSEEN')
+                  uids = data[0].split()
+                  print(f"  未読: {len(uids)}件")
+                  summary[acct['account']] = len(uids)
+                  for uid in uids[-20:]:
+                      _, msg_data = mail.fetch(uid, '(RFC822)')
+                      msg = email.message_from_bytes(msg_data[0][1])
+                      date_str = msg.get('Date', '')
+                      try: dt = parsedate_to_datetime(date_str).isoformat()
+                      except: dt = date_str
+                      all_messages.append({
+                          'uid': uid.decode(), 'account': acct['account'],
+                          'subject': decode_str(msg.get('Subject', '')),
+                          'from': decode_str(msg.get('From', '')),
+                          'to': decode_str(msg.get('To', '')),
+                          'date': dt, 'body': get_body(msg)[:2000],
+                      })
+                      print(f"  - [{dt[:10]}] {decode_str(msg.get('Subject',''))}")
+                  mail.logout()
+              except Exception as e:
+                  print(f"  ❌ {acct['account']} エラー: {e}")
+                  summary[acct['account']] = f'error: {e}'
+
+          today = datetime.date.today().isoformat()
+          result = {
+              'action': 'fetch_inbox',
+              'fetched_at': datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+              'date': today,
+              'summary': summary,
+              'total_unread': sum(v for v in summary.values() if isinstance(v, int)),
+              'fetched_count': len(all_messages),
+              'messages': all_messages,
+          }
+          with open('/tmp/inbox.json', 'w') as f:
+              json.dump(result, f, ensure_ascii=False, indent=2)
+          print(f"\n✅ fetch_inbox 完了: 合計{len(all_messages)}件")
+          PYEOF
+
       - name: Push to private repo
         env:
           PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
           git clone https://x-access-token:$PAT_TOKEN@github.com/tokistorage/tr.git /tmp/tr
           cd /tmp/tr
+
+          # プロジェクトキャッシュ更新
           cp /tmp/briefing.json project/cache/project.json
+
+          # メール保存
+          TODAY=$(python3 -c "import datetime; print(datetime.date.today().isoformat())")
+          mkdir -p memory/inbox
+          cp /tmp/inbox.json "memory/inbox/${TODAY}.json"
+          echo "✅ inbox → memory/inbox/${TODAY}.json"
+
           mkdir -p .agent
           echo "{\"last_briefing\": \"$(date -u '+%Y-%m-%dT%H:%M:%SZ')\"}" > .agent/last_run.json
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git add -A
-          git diff --cached --quiet || git commit -m "briefing: $(date '+%Y-%m-%dT%H:%M:%S') [skip ci]"
+          git diff --cached --quiet || git commit -m "briefing+inbox: $(date '+%Y-%m-%dT%H:%M:%S') [skip ci]"
           git push
-          echo "✅ ブリーフィングをprivate repoに保存"
+          echo "✅ private repo push完了"
