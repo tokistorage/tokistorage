@@ -111,6 +111,12 @@ case "$ACTION" in
     cp /tmp/result.json "memory/briefings/${DATE}.json"
     echo "✅ morning_briefing → memory/briefings/${DATE}.json"
     ;;
+  fetch_news)
+    mkdir -p memory/news
+    DATE=$(python3 -c "import json; print(json.load(open('/tmp/result.json'))['date'])")
+    cp /tmp/result.json "memory/news/${DATE}.json"
+    echo "✅ fetch_news → memory/news/${DATE}.json"
+    ;;
   delete_project_items)
     mkdir -p outbox
     cp /tmp/result.json outbox/delete_items_result.json

@@ -111,6 +111,38 @@ try:
 except Exception as e:
     print(f'⚠️ ニュース取得エラー: {e}')
 
+# ニュース取得（web search）
+news_text = ''
+try:
+    news_topics = (
+        "以下のトピックについて今日の最新動向を簡潔に教えてください（各1〜2件）:\n"
+        "1. 記憶・保存技術（DNA保存、石英ガラス、長期アーカイブ）\n"
+        "2. AI・モデル動向（無料枠変更、新モデル、エージェント）\n"
+        "3. 存在証明・デジタル遺産（法制度、相続、デジタルID）\n"
+        "4. 災害・BCP（インフラ停止、オフグリッド）\n"
+        "5. 移住・地方創生（三重・伊賀、地域政策）\n"
+        "情報がなければ「特になし」と書いてください。"
+    )
+    news_body = json.dumps({
+        'model': 'openai/gpt-4o',
+        'messages': [{'role': 'user', 'content': news_topics}],
+        'max_tokens': 600,
+        'tools': [{'type': 'web_search_preview'}]
+    }).encode()
+    news_req = urllib.request.Request(
+        'https://models.github.ai/inference/chat/completions',
+        data=news_body,
+        headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+    )
+    with urllib.request.urlopen(news_req, timeout=30) as r:
+        news_result = json.loads(r.read())
+    raw = news_result['choices'][0]['message']['content']
+    news_text = raw if isinstance(raw, str) else ' '.join(b.get('text','') for b in raw if isinstance(b, dict))
+    print('✅ ニュース取得完了')
+except Exception as e:
+    news_text = f'（取得エラー: {e}）'
+    print(f'⚠️ ニュース取得失敗: {e}')
+
 tasks_json = json.dumps(tasks, ensure_ascii=False)
 format_instructions = (
     "以下のフォーマットで出力してください:\n\n"
@@ -137,6 +169,9 @@ format_instructions = (
     "🌍 **トキストレージ目線のニュース**\n"
     "（社会動向ニュースから関連トピックを1〜3件。なければ省略）\n\n"
     "---\n\n"
+    "🌍 **トキストレージ目線のニュース**\n"
+    "（記憶・保存技術 / AI動向 / 存在証明 / 災害BCP / 移住地方 の順）\n\n"
+    "---\n\n"
     "💬 今日は何から始めますか？"
 )
 
@@ -152,7 +187,7 @@ prompt = (
 body = json.dumps({
     'model': 'openai/gpt-4o-mini',
     'messages': [{'role': 'user', 'content': prompt}],
-    'max_tokens': 1800
+    'max_tokens': 2000
 }).encode()
 
 req = urllib.request.Request(

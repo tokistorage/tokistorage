@@ -171,6 +171,13 @@ jobs:
         env:
           PAYLOAD: ${{ steps.parse.outputs.payload }}
 
+      - name: fetch_news
+        if: steps.parse.outputs.action == 'fetch_news'
+        run: python3 $GITHUB_WORKSPACE/agent/actions/fetch_news.py
+        env:
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+          PAYLOAD: ${{ steps.parse.outputs.payload }}
+
       - name: run_skill
         if: steps.parse.outputs.action == 'run_skill'
         run: python3 $GITHUB_WORKSPACE/agent/actions/run_skill.py
