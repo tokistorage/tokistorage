@@ -1,1 +1,1 @@
-{"action": "morning_briefing", "payload": {}, "_t": "2026-03-15T01:12:44Z"}
+{"action": "write_memory", "payload": {"path": "daily/2026-03-15.md", "content": "\n## エッセイ公開（2本目）\n- タイトル: 先に考えておく ── 非同期設計がAIの応答速度を変える\n- slug: async-thinking\n- カテゴリ: 技術・設計（73本目）\n- 通算: 179本目\n- 背景: daily-news.ymlをスケジュール分離した当日に執筆\n", "mode": "append"}, "_t": "2026-03-15T01:22:15Z"}
