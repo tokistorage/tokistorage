@@ -1,0 +1,23 @@
+name: Daily News Fetch
+
+on:
+  schedule:
+    - cron: '0 21 * * *'  # 毎日 21:00 UTC = 06:00 JST
+  workflow_dispatch:       # 手動実行も可能
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch news
+        run: python3 $GITHUB_WORKSPACE/agent/actions/fetch_news.py
+        env:
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+
+      - name: Save to private repo
+        env:
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+          ACTION: fetch_news
+        run: bash $GITHUB_WORKSPACE/agent/save_result.sh
