@@ -47,29 +47,17 @@ jobs:
 
       - name: Parse request
         id: parse
-        run: |
-          if [ -n "${{ github.event.inputs.inbox_text }}" ]; then
-            ACTION="write_inbox"
-            TEXT="${{ github.event.inputs.inbox_text }}"
-            PLACE="${{ github.event.inputs.place }}"
-            LAT="${{ github.event.inputs.lat }}"
-            LNG="${{ github.event.inputs.lng }}"
-            WEATHER="${{ github.event.inputs.weather }}"
-            DATE="${{ github.event.inputs.date }}"
-            TIME="${{ github.event.inputs.time }}"
-            PAYLOAD="{\"text\": \"$TEXT\", \"place\": \"$PLACE\", \"lat\": \"$LAT\", \"lng\": \"$LNG\", \"weather\": \"$WEATHER\", \"date\": \"$DATE\", \"time\": \"$TIME\"}"
-          elif [ -f agent/request.json ]; then
-            ACTION=$(python3 -c "import sys,json; d=json.load(open('agent/request.json')); print(d.get('action','fetch_project'))")
-            PAYLOAD=$(python3 -c "import sys,json; d=json.load(open('agent/request.json')); print(json.dumps(d.get('payload',{})))")
-          else
-            ACTION="${{ github.event.inputs.action }}"
-            PAYLOAD="{}"
-          fi
-          echo "action=$ACTION" >> $GITHUB_OUTPUT
-          echo "payload=$PAYLOAD" >> $GITHUB_OUTPUT
-          echo "▶ action=$ACTION"
+        run: python3 $GITHUB_WORKSPACE/agent/actions/parse_request.py
+        env:
+          INBOX_TEXT: ${{ github.event.inputs.inbox_text }}
+          PLACE: ${{ github.event.inputs.place }}
+          LAT: ${{ github.event.inputs.lat }}
+          LNG: ${{ github.event.inputs.lng }}
+          WEATHER: ${{ github.event.inputs.weather }}
+          DATE_INPUT: ${{ github.event.inputs.date }}
+          TIME_INPUT: ${{ github.event.inputs.time }}
+          ACTION_INPUT: ${{ github.event.inputs.action }}
 
-      # ── fetch_project ──────────────────────────────────────
       - name: fetch_project
         if: steps.parse.outputs.action == 'fetch_project'
         env:
@@ -79,467 +67,71 @@ jobs:
             -H "Content-Type: application/json" -X POST \
             -d '{"query":"{ user(login: \"tokistorage\") { projectV2(number: 2) { title items(first: 100) { nodes { id content { ... on Issue { title state number url } ... on DraftIssue { title } } fieldValues(first:5){ nodes { ... on ProjectV2ItemFieldSingleSelectValue { name field { ... on ProjectV2FieldCommon { name } } } } } } } } } }"}' \
             https://api.github.com/graphql > /tmp/result.json
-          TOTAL=$(python3 -c "import json; d=json.load(open('/tmp/result.json')); print(len(d['data']['user']['projectV2']['items']['nodes']))")
-          echo "✅ fetch_project 完了: ${TOTAL}件"
+          python3 -c "import json; d=json.load(open('/tmp/result.json')); print('✅ fetch_project 完了:', len(d['data']['user']['projectV2']['items']['nodes']), '件')"
 
-      # ── delete_project_items ───────────────────────────────
       - name: delete_project_items
         if: steps.parse.outputs.action == 'delete_project_items'
+        run: python3 $GITHUB_WORKSPACE/agent/actions/delete_project_items.py
         env:
           PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
           PAYLOAD: ${{ steps.parse.outputs.payload }}
-        run: |
-          python3 << 'PYEOF'
-          import json, urllib.request, os
 
-          payload = json.loads(os.environ.get('PAYLOAD', '{}'))
-          token = os.environ['PAT_TOKEN']
-          item_ids = payload.get('item_ids', [])
-
-          def gql(query, variables=None):
-              body = {'query': query}
-              if variables: body['variables'] = variables
-              req = urllib.request.Request(
-                  'https://api.github.com/graphql',
-                  data=json.dumps(body).encode(),
-                  headers={'Authorization': f'bearer {token}', 'Content-Type': 'application/json'}
-              )
-              with urllib.request.urlopen(req) as r:
-                  return json.loads(r.read())
-
-          meta = gql('{ user(login: "tokistorage") { projectV2(number: 2) { id } } }')
-          project_id = meta['data']['user']['projectV2']['id']
-
-          results = []
-          for item_id in item_ids:
-              result = gql('''mutation($p:ID!, $i:ID!) {
-                deleteProjectV2Item(input: {projectId: $p, itemId: $i}) {
-                  deletedItemId
-                }
-              }''', {'p': project_id, 'i': item_id})
-              if 'errors' in result:
-                  results.append({'id': item_id, 'status': 'error', 'error': str(result['errors'])})
-                  print(f"❌ {item_id}: {result['errors']}")
-              else:
-                  results.append({'id': item_id, 'status': 'deleted'})
-                  print(f"✅ 削除: {item_id}")
-
-          with open('/tmp/result.json', 'w') as f:
-              json.dump({'action': 'delete_project_items', 'deleted': len([r for r in results if r['status']=='deleted']), 'results': results}, f, ensure_ascii=False, indent=2)
-          print(f"✅ 完了: {len([r for r in results if r['status']=='deleted'])}/{len(item_ids)}件削除")
-          PYEOF
-
-      # ── update_task ────────────────────────────────────────
       - name: update_task
         if: steps.parse.outputs.action == 'update_task'
-        run: |
-          python3 << 'PYEOF'
-          import json, urllib.request, os, sys
-
-          payload = json.loads(os.environ.get('PAYLOAD', '{}'))
-          token = os.environ['PAT_TOKEN']
-
-          def gql(query, variables=None):
-              body = {'query': query}
-              if variables: body['variables'] = variables
-              req = urllib.request.Request(
-                  'https://api.github.com/graphql',
-                  data=json.dumps(body).encode(),
-                  headers={'Authorization': f'bearer {token}', 'Content-Type': 'application/json'}
-              )
-              with urllib.request.urlopen(req) as r:
-                  return json.loads(r.read())
-
-          meta = gql('{ user(login: "tokistorage") { projectV2(number: 2) { id fields(first:20){ nodes { ... on ProjectV2SingleSelectField { id name options { id name } } } } } } }')
-          project_id = meta['data']['user']['projectV2']['id']
-          status_field = next((f for f in meta['data']['user']['projectV2']['fields']['nodes'] if f and f.get('name') == 'Status'), None)
-          options = {o['name']: o['id'] for o in status_field['options']}
-
-          updates = payload.get('updates', [])
-          results = []
-          for u in updates:
-              option_id = options.get(u['new_status'])
-              if not option_id:
-                  results.append({'task_id': u['task_id'], 'error': f"不明: {u['new_status']}", 'available': list(options.keys())})
-                  continue
-              r = gql('''mutation($i:ID!,$p:ID!,$f:ID!,$o:String!){
-                updateProjectV2ItemFieldValue(input:{projectId:$p,itemId:$i,fieldId:$f,value:{singleSelectOptionId:$o}}){projectV2Item{id}}
-              }''', {'i': u['task_id'], 'p': project_id, 'f': status_field['id'], 'o': option_id})
-              ok = 'errors' not in r
-              results.append({'task_id': u['task_id'], 'ok': ok, 'new_status': u['new_status']})
-              print(f"{'✅' if ok else '❌'} {u['task_id']} → {u['new_status']}")
-
-          with open('/tmp/result.json', 'w') as f:
-              json.dump({'action': 'update_task', 'results': results}, f, ensure_ascii=False, indent=2)
-          PYEOF
+        run: python3 $GITHUB_WORKSPACE/agent/actions/update_task.py
         env:
           PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
           PAYLOAD: ${{ steps.parse.outputs.payload }}
 
-      # ── create_issue ───────────────────────────────────────
       - name: create_issue
         if: steps.parse.outputs.action == 'create_issue'
-        run: |
-          python3 << 'PYEOF'
-          import json, urllib.request, os
-
-          payload = json.loads(os.environ.get('PAYLOAD', '{}'))
-          token = os.environ['PAT_TOKEN']
-          title = payload.get('title', 'New Task')
-          body = payload.get('body', '')
-          labels = payload.get('labels', [])
-          repo = payload.get('repo', 'tokistorage/tokistorage')
-
-          def api(url, data, method='POST'):
-              req = urllib.request.Request(
-                  url, data=json.dumps(data).encode(),
-                  headers={'Authorization': f'bearer {token}', 'Content-Type': 'application/json', 'Accept': 'application/vnd.github+json'},
-                  method=method
-              )
-              with urllib.request.urlopen(req) as r:
-                  return json.loads(r.read())
-
-          def gql(query, variables=None):
-              body = {'query': query}
-              if variables: body['variables'] = variables
-              req = urllib.request.Request(
-                  'https://api.github.com/graphql',
-                  data=json.dumps(body).encode(),
-                  headers={'Authorization': f'bearer {token}', 'Content-Type': 'application/json'}
-              )
-              with urllib.request.urlopen(req) as r:
-                  return json.loads(r.read())
-
-          # Issue作成
-          issue_data = {'title': title, 'body': body}
-          if labels: issue_data['labels'] = labels
-          issue = api(f'https://api.github.com/repos/{repo}/issues', issue_data)
-          print(f"✅ Issue作成: #{issue['number']} {issue['title']}")
-
-          # Project #2 に追加
-          meta = gql('{ user(login: "tokistorage") { projectV2(number: 2) { id } } }')
-          if 'errors' in meta:
-              raise Exception(f"Project取得エラー: {meta['errors']}")
-          project_id = meta['data']['user']['projectV2']['id']
-          result = gql('''mutation($p:ID!, $c:ID!) {
-            addProjectV2ItemById(input: {projectId: $p, contentId: $c}) {
-              item { id }
-            }
-          }''', {'p': project_id, 'c': issue['node_id']})
-          if 'errors' in result:
-              raise Exception(f"Project追加エラー: {result['errors']}")
-          item_id = result['data']['addProjectV2ItemById']['item']['id']
-          print(f"✅ Project追加: {item_id}")
-
-          with open('/tmp/result.json', 'w') as f:
-              json.dump({'action': 'create_issue', 'issue_number': issue['number'], 'url': issue['html_url'], 'title': title, 'project_item_id': item_id}, f, ensure_ascii=False, indent=2)
-          PYEOF
+        run: python3 $GITHUB_WORKSPACE/agent/actions/create_issue.py
         env:
           PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
           PAYLOAD: ${{ steps.parse.outputs.payload }}
 
-      # ── write_file ─────────────────────────────────────────
       - name: write_file
         if: steps.parse.outputs.action == 'write_file'
-        run: |
-          python3 << 'PYEOF'
-          import json, os, base64
-
-          payload = json.loads(os.environ.get('PAYLOAD', '{}'))
-          path = payload.get('path', 'outbox/output.md')
-          content = payload.get('content', '')
-          os.makedirs('/tmp/tr_write', exist_ok=True)
-          with open('/tmp/tr_write_content.txt', 'w') as f:
-              f.write(content)
-          with open('/tmp/result.json', 'w') as f:
-              json.dump({'action': 'write_file', 'path': path, 'size': len(content)}, f, ensure_ascii=False, indent=2)
-          print(f"✅ write_file: {path} ({len(content)} chars)")
-          PYEOF
+        run: python3 $GITHUB_WORKSPACE/agent/actions/write_file.py
         env:
           PAYLOAD: ${{ steps.parse.outputs.payload }}
 
-      # ── write_memory ───────────────────────────────────────
       - name: write_memory
         if: steps.parse.outputs.action == 'write_memory'
-        run: |
-          python3 << 'PYEOF'
-          import json, os
-
-          payload = json.loads(os.environ.get('PAYLOAD', '{}'))
-          # path例: "daily/2026-03-12.md" or "context/project-notes.md"
-          path = payload.get('path', '')
-          content = payload.get('content', '')
-          mode = payload.get('mode', 'overwrite')  # overwrite | append
-
-          if not path:
-              raise ValueError("path is required")
-
-          os.makedirs('/tmp/tr_memory', exist_ok=True)
-          with open('/tmp/tr_memory/path.txt', 'w') as f:
-              f.write(path)
-          with open('/tmp/tr_memory/content.txt', 'w') as f:
-              f.write(content)
-          with open('/tmp/tr_memory/mode.txt', 'w') as f:
-              f.write(mode)
-          with open('/tmp/result.json', 'w') as f:
-              json.dump({'action': 'write_memory', 'path': f'memory/{path}', 'mode': mode, 'size': len(content)}, f, ensure_ascii=False, indent=2)
-          print(f"✅ write_memory: memory/{path} ({mode}, {len(content)} chars)")
-          PYEOF
+        run: python3 $GITHUB_WORKSPACE/agent/actions/write_memory.py
         env:
           PAYLOAD: ${{ steps.parse.outputs.payload }}
 
-      # ── publish_essay ──────────────────────────────────────
       - name: publish_essay
         if: steps.parse.outputs.action == 'publish_essay'
-        run: |
-          python3 << 'PYEOF'
-          import json, os, datetime
-
-          payload = json.loads(os.environ.get('PAYLOAD', '{}'))
-          slug = payload.get('slug', f"essay-{datetime.date.today().isoformat()}")
-          title = payload.get('title', 'Untitled')
-          content = payload.get('content', '')  # HTML or Markdown
-          lang = payload.get('lang', 'ja')  # ja | en
-
-          filename = f"{slug}.html" if not slug.endswith('.html') else slug
-
-          os.makedirs('/tmp/tr_essay', exist_ok=True)
-          with open('/tmp/tr_essay/filename.txt', 'w') as f:
-              f.write(filename)
-          with open('/tmp/tr_essay/content.txt', 'w') as f:
-              f.write(content)
-          with open('/tmp/result.json', 'w') as f:
-              json.dump({'action': 'publish_essay', 'filename': filename, 'title': title, 'lang': lang}, f, ensure_ascii=False, indent=2)
-          print(f"✅ publish_essay: {filename}")
-          PYEOF
+        run: python3 $GITHUB_WORKSPACE/agent/actions/publish_essay.py
         env:
           PAYLOAD: ${{ steps.parse.outputs.payload }}
 
-      # ── reorder_tasks ──────────────────────────────────────
       - name: reorder_tasks
         if: steps.parse.outputs.action == 'reorder_tasks'
-        run: |
-          python3 << 'PYEOF'
-          import json, urllib.request, os
-
-          payload = json.loads(os.environ.get('PAYLOAD', '{}'))
-          token = os.environ['PAT_TOKEN']
-
-          def gql(query, variables=None):
-              body = {'query': query}
-              if variables: body['variables'] = variables
-              req = urllib.request.Request(
-                  'https://api.github.com/graphql',
-                  data=json.dumps(body).encode(),
-                  headers={'Authorization': f'bearer {token}', 'Content-Type': 'application/json'}
-              )
-              with urllib.request.urlopen(req) as r:
-                  return json.loads(r.read())
-
-          meta = gql('{ user(login: "tokistorage") { projectV2(number: 2) { id } } }')
-          project_id = meta['data']['user']['projectV2']['id']
-
-          # ordered_ids: 上から順に並べたいitem IDのリスト
-          ordered_ids = payload.get('ordered_ids', [])
-          results = []
-          prev_id = None
-          for item_id in ordered_ids:
-              variables = {'projectId': project_id, 'itemId': item_id}
-              if prev_id:
-                  variables['afterId'] = prev_id
-              r = gql('''mutation($projectId:ID!,$itemId:ID!,$afterId:ID){
-                updateProjectV2ItemPosition(input:{projectId:$projectId,itemId:$itemId,afterId:$afterId}){
-                  items { totalCount }
-                }
-              }''', variables)
-              ok = 'errors' not in r
-              results.append({'item_id': item_id, 'ok': ok})
-              print(f"{'✅' if ok else '❌'} {item_id}")
-              prev_id = item_id
-
-          with open('/tmp/result.json', 'w') as f:
-              json.dump({'action': 'reorder_tasks', 'results': results}, f, ensure_ascii=False, indent=2)
-          PYEOF
+        run: python3 $GITHUB_WORKSPACE/agent/actions/reorder_tasks.py
         env:
           PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
           PAYLOAD: ${{ steps.parse.outputs.payload }}
 
-      # ── add_comment ────────────────────────────────────────
       - name: add_comment
         if: steps.parse.outputs.action == 'add_comment'
-        run: |
-          python3 << 'PYEOF'
-          import json, urllib.request, os
-
-          payload = json.loads(os.environ.get('PAYLOAD', '{}'))
-          token = os.environ['PAT_TOKEN']
-          issue_number = payload.get('issue_number')
-          body = payload.get('body', '')
-          repo = payload.get('repo', 'tokistorage/tokistorage')
-
-          if not issue_number:
-              raise ValueError("issue_number is required")
-
-          req = urllib.request.Request(
-              f'https://api.github.com/repos/{repo}/issues/{issue_number}/comments',
-              data=json.dumps({'body': body}).encode(),
-              headers={'Authorization': f'bearer {token}', 'Content-Type': 'application/json', 'Accept': 'application/vnd.github+json'}
-          )
-          with urllib.request.urlopen(req) as r:
-              comment = json.loads(r.read())
-          print(f"✅ コメント追加: Issue #{issue_number} → comment #{comment['id']}")
-
-          with open('/tmp/result.json', 'w') as f:
-              json.dump({'action': 'add_comment', 'issue_number': issue_number, 'comment_id': comment['id'], 'url': comment['html_url']}, f, ensure_ascii=False, indent=2)
-          PYEOF
+        run: python3 $GITHUB_WORKSPACE/agent/actions/add_comment.py
         env:
           PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
           PAYLOAD: ${{ steps.parse.outputs.payload }}
 
-      # ── close_issue ───────────────────────────────────────
       - name: close_issue
         if: steps.parse.outputs.action == 'close_issue'
-        run: |
-          python3 << 'PYEOF'
-          import json, urllib.request, os
-
-          payload = json.loads(os.environ.get('PAYLOAD', '{}'))
-          token = os.environ['PAT_TOKEN']
-          issue_number = payload.get('issue_number')
-          repo = payload.get('repo', 'tokistorage/tokistorage.github.io')
-
-          if not issue_number:
-              raise ValueError("issue_number is required")
-
-          req = urllib.request.Request(
-              f'https://api.github.com/repos/{repo}/issues/{issue_number}',
-              data=json.dumps({'state': 'closed'}).encode(),
-              headers={'Authorization': f'bearer {token}', 'Content-Type': 'application/json', 'Accept': 'application/vnd.github+json'},
-              method='PATCH'
-          )
-          with urllib.request.urlopen(req) as r:
-              issue = json.loads(r.read())
-          print(f"✅ Issue #{issue_number} クローズ: {issue['state']}")
-
-          with open('/tmp/result.json', 'w') as f:
-              json.dump({'action': 'close_issue', 'issue_number': issue_number, 'repo': repo, 'state': issue['state']}, f, ensure_ascii=False, indent=2)
-          PYEOF
+        run: python3 $GITHUB_WORKSPACE/agent/actions/close_issue.py
         env:
           PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
           PAYLOAD: ${{ steps.parse.outputs.payload }}
 
-      # ── fetch_inbox ───────────────────────────────────────
       - name: fetch_inbox
         if: steps.parse.outputs.action == 'fetch_inbox'
-        run: |
-          python3 << 'PYEOF'
-          import imaplib, email, json, os, datetime
-          from email.header import decode_header
-          from email.utils import parsedate_to_datetime
-
-          payload = json.loads(os.environ.get('PAYLOAD', '{}'))
-          max_count = payload.get('max', 20)
-
-          # 取得対象アカウント一覧
-          accounts = [
-              {
-                  'account': 'tokistorage',
-                  'address': os.environ['GMAIL_ADDRESS'],
-                  'password': os.environ['GMAIL_APP_PASSWORD'],
-                  'host': 'imap.gmail.com',
-              },
-              {
-                  'account': 'business',
-                  'address': os.environ['BUSINESS_EMAIL'],
-                  'password': os.environ['BUSINESS_APP_PASSWORD'],
-                  'host': 'imap.gmail.com',
-              },
-          ]
-
-          def decode_str(s):
-              if s is None:
-                  return ''
-              parts = decode_header(s)
-              result = ''
-              for part, enc in parts:
-                  if isinstance(part, bytes):
-                      result += part.decode(enc or 'utf-8', errors='replace')
-                  else:
-                      result += part
-              return result
-
-          def get_body(msg):
-              if msg.is_multipart():
-                  for part in msg.walk():
-                      ct = part.get_content_type()
-                      cd = str(part.get('Content-Disposition', ''))
-                      if ct == 'text/plain' and 'attachment' not in cd:
-                          payload_bytes = part.get_payload(decode=True)
-                          charset = part.get_content_charset() or 'utf-8'
-                          return payload_bytes.decode(charset, errors='replace')
-              else:
-                  payload_bytes = msg.get_payload(decode=True)
-                  if payload_bytes:
-                      charset = msg.get_content_charset() or 'utf-8'
-                      return payload_bytes.decode(charset, errors='replace')
-              return ''
-
-          def fetch_account(acct):
-              print(f"\n📬 [{acct['account']}] {acct['address']}")
-              mail = imaplib.IMAP4_SSL(acct['host'])
-              mail.login(acct['address'], acct['password'])
-              mail.select('inbox')
-              status, data = mail.search(None, 'UNSEEN')
-              uids = data[0].split()
-              print(f"  未読: {len(uids)}件")
-              messages = []
-              for uid in uids[-max_count:]:
-                  status, msg_data = mail.fetch(uid, '(RFC822)')
-                  raw = msg_data[0][1]
-                  msg = email.message_from_bytes(raw)
-                  date_str = msg.get('Date', '')
-                  try:
-                      dt = parsedate_to_datetime(date_str).isoformat()
-                  except:
-                      dt = date_str
-                  messages.append({
-                      'uid': uid.decode(),
-                      'account': acct['account'],
-                      'subject': decode_str(msg.get('Subject', '')),
-                      'from': decode_str(msg.get('From', '')),
-                      'to': decode_str(msg.get('To', '')),
-                      'date': dt,
-                      'body': get_body(msg)[:2000],
-                  })
-                  print(f"  - [{dt[:10]}] {decode_str(msg.get('Subject',''))}")
-              mail.logout()
-              return {'unread_count': len(uids), 'messages': messages}
-
-          all_messages = []
-          summary = {}
-          for acct in accounts:
-              try:
-                  result = fetch_account(acct)
-                  summary[acct['account']] = result['unread_count']
-                  all_messages.extend(result['messages'])
-              except Exception as e:
-                  print(f"  ❌ エラー: {e}")
-                  summary[acct['account']] = f'error: {e}'
-
-          today = datetime.date.today().isoformat()
-          result = {
-              'action': 'fetch_inbox',
-              'fetched_at': datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
-              'date': today,
-              'summary': summary,
-              'total_unread': sum(v for v in summary.values() if isinstance(v, int)),
-              'fetched_count': len(all_messages),
-              'messages': all_messages,
-          }
-          with open('/tmp/result.json', 'w') as f:
-              json.dump(result, f, ensure_ascii=False, indent=2)
-          print(f"\n✅ fetch_inbox 完了: 合計{len(all_messages)}件取得")
-          PYEOF
+        run: python3 $GITHUB_WORKSPACE/agent/actions/fetch_inbox.py
         env:
           GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
@@ -547,362 +139,46 @@ jobs:
           BUSINESS_APP_PASSWORD: ${{ secrets.BUSINESS_APP_PASSWORD }}
           PAYLOAD: ${{ steps.parse.outputs.payload }}
 
-      # ── send_email ────────────────────────────────────────
       - name: send_email
         if: steps.parse.outputs.action == 'send_email'
-        run: |
-          python3 << 'PYEOF'
-          import smtplib, json, os, datetime
-          from email.mime.text import MIMEText
-          from email.mime.multipart import MIMEMultipart
-          from email.header import Header
-
-          gmail_address = os.environ['GMAIL_ADDRESS']
-          app_password = os.environ['GMAIL_APP_PASSWORD']
-          payload = json.loads(os.environ.get('PAYLOAD', '{}'))
-
-          to = payload.get('to', '')
-          subject = payload.get('subject', '')
-          body = payload.get('body', '')
-          from_name = payload.get('from_name', 'Takuya Sato / TokiStorage')
-
-          if not to or not subject or not body:
-              raise ValueError("to / subject / body は必須です")
-
-          msg = MIMEMultipart()
-          msg['From'] = f'{from_name} <{gmail_address}>'
-          msg['To'] = to
-          msg['Subject'] = Header(subject, 'utf-8')
-          msg.attach(MIMEText(body, 'plain', 'utf-8'))
-
-          with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
-              server.login(gmail_address, app_password)
-              server.sendmail(gmail_address, to, msg.as_string())
-
-          print(f"✅ 送信完了: {to} / {subject}")
-
-          result = {
-              'action': 'send_email',
-              'sent_at': datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
-              'to': to,
-              'subject': subject,
-              'status': 'sent',
-          }
-          with open('/tmp/result.json', 'w') as f:
-              json.dump(result, f, ensure_ascii=False, indent=2)
-          PYEOF
+        run: python3 $GITHUB_WORKSPACE/agent/actions/send_email.py
         env:
           GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           PAYLOAD: ${{ steps.parse.outputs.payload }}
 
-      # ── write_inbox ───────────────────────────────────────
       - name: write_inbox
         if: steps.parse.outputs.action == 'write_inbox'
-        run: |
-          python3 << 'PYEOF'
-          import json, os, datetime
-
-          payload = json.loads(os.environ.get('PAYLOAD', '{}'))
-          text = payload.get('text', '').strip()
-          place = payload.get('place', '').strip()
-          lat = payload.get('lat', '').strip()
-          lng = payload.get('lng', '').strip()
-          weather = payload.get('weather', '').strip()
-          date_str = payload.get('date', '').strip()
-          time_str = payload.get('time', '').strip()
-
-          if not text:
-              raise ValueError("text is required")
-
-          now = datetime.datetime.utcnow()
-          jst = now + datetime.timedelta(hours=9)
-
-          # ショートカットから日時が渡された場合はそちらを優先（オフライン記録の場合）
-          if date_str and time_str:
-              timestamp = f"{date_str} {time_str}"
-              # ファイル名用にdatetimeをパース試みる（失敗したらサーバー時刻）
-              try:
-                  import re
-                  # "2026/03/14 19:20" or "2026/03/14 19:20:36 GMT+9:18:59" などに対応
-                  m = re.match(r'(\d{4})[/\-](\d{2})[/\-](\d{2})\s+(\d{2}):(\d{2})', f"{date_str} {time_str}")
-                  if m:
-                      y,mo,d,h,mi = m.groups()
-                      filename = f"{y}-{mo}-{d}-{h}-{mi}.md"
-                      display_time = f"{y}-{mo}-{d} {h}:{mi} (現地時刻)"
-                  else:
-                      raise ValueError("parse failed")
-              except:
-                  filename = jst.strftime('%Y-%m-%d-%H-%M') + '.md'
-                  display_time = jst.strftime('%Y-%m-%d %H:%M') + ' JST'
-          else:
-              filename = jst.strftime('%Y-%m-%d-%H-%M') + '.md'
-              display_time = jst.strftime('%Y-%m-%d %H:%M') + ' JST'
-
-          lines = [f"# {display_time}", "", text, ""]
-          if weather:
-              lines.append(f"🌤 {weather}")
-              lines.append("")
-          if place or (lat and lng):
-              lines.append("## 位置情報")
-              if place:
-                  lines.append(f"- 住所: {place}")
-              if lat and lng:
-                  lines.append(f"- 座標: {lat}, {lng}")
-                  lines.append(f"- マップ: https://maps.google.com/maps?q={lat},{lng}")
-              lines.append("")
-          content = "\n".join(lines)
-
-          os.makedirs('/tmp/tr_inbox', exist_ok=True)
-          with open('/tmp/tr_inbox/filename.txt', 'w') as f:
-              f.write(filename)
-          with open('/tmp/tr_inbox/content.txt', 'w') as f:
-              f.write(content)
-          with open('/tmp/result.json', 'w') as f:
-              json.dump({'action': 'write_inbox', 'filename': filename, 'size': len(text), 'has_location': bool(place or lat)}, f, ensure_ascii=False, indent=2)
-          print(f"✅ write_inbox: inbox/{filename} ({len(text)} chars, location={'yes' if place or lat else 'no'})")
-          PYEOF
+        run: python3 $GITHUB_WORKSPACE/agent/actions/write_inbox.py
         env:
           PAYLOAD: ${{ steps.parse.outputs.payload }}
 
-      # ── archive_inbox ─────────────────────────────────────
       - name: archive_inbox
         if: steps.parse.outputs.action == 'archive_inbox'
-        run: |
-          python3 << 'PYEOF'
-          import json, os
-
-          payload = json.loads(os.environ.get('PAYLOAD', '{}'))
-          files = payload.get('files', [])  # 移動するファイル名リスト (例: ["2026-03-14-17-19.md"])
-
-          if not files:
-              raise ValueError("files is required")
-
-          with open('/tmp/result.json', 'w') as f:
-              json.dump({'action': 'archive_inbox', 'files': files, 'count': len(files)}, f, ensure_ascii=False, indent=2)
-          print(f"✅ archive_inbox: {len(files)}件をアーカイブ予定")
-          PYEOF
+        run: python3 $GITHUB_WORKSPACE/agent/actions/archive_inbox.py
         env:
           PAYLOAD: ${{ steps.parse.outputs.payload }}
 
-
-      # ── morning_briefing ──────────────────────────────────
       - name: morning_briefing
         if: steps.parse.outputs.action == 'morning_briefing'
         run: python3 $GITHUB_WORKSPACE/agent/morning_briefing.py
         env:
           PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
-          PAYLOAD: ${{ steps.parse.outputs.payload }}
 
-      # ── write_relations ───────────────────────────────────
       - name: write_relations
         if: steps.parse.outputs.action == 'write_relations'
-        run: |
-          python3 << 'PYEOF2'
-import json, os
-
-payload = json.loads(os.environ.get('PAYLOAD', '{}'))
-path = payload.get('path', '')   # 例: "people/randall.md"
-content = payload.get('content', '')
-mode = payload.get('mode', 'overwrite')  # overwrite | append
-
-if not path:
-    raise ValueError("path is required")
-
-os.makedirs('/tmp/tr_relations', exist_ok=True)
-with open('/tmp/tr_relations/path.txt', 'w') as f:
-    f.write(path)
-with open('/tmp/tr_relations/content.txt', 'w') as f:
-    f.write(content)
-with open('/tmp/tr_relations/mode.txt', 'w') as f:
-    f.write(mode)
-with open('/tmp/result.json', 'w') as f:
-    json.dump({'action': 'write_relations', 'path': f'memory/relations/{path}', 'mode': mode, 'size': len(content)}, f, ensure_ascii=False, indent=2)
-print(f"✅ write_relations: memory/relations/{path} ({mode}, {len(content)} chars)")
-PYEOF2
+        run: python3 $GITHUB_WORKSPACE/agent/actions/write_relations.py
         env:
           PAYLOAD: ${{ steps.parse.outputs.payload }}
 
-      # ── run_skill ──────────────────────────────────────────
-      # Claude自身が次のアクションのリクエストを書き込むスキルチェーン用
       - name: run_skill
         if: steps.parse.outputs.action == 'run_skill'
-        run: |
-          python3 << 'PYEOF'
-          import json, os
-
-          payload = json.loads(os.environ.get('PAYLOAD', '{}'))
-          skill = payload.get('skill', '')
-          args = payload.get('args', {})
-
-          with open('/tmp/result.json', 'w') as f:
-              json.dump({'action': 'run_skill', 'skill': skill, 'args': args, 'status': 'queued'}, f, ensure_ascii=False, indent=2)
-          print(f"✅ run_skill: {skill} キューへ追加")
-          PYEOF
+        run: python3 $GITHUB_WORKSPACE/agent/actions/run_skill.py
         env:
           PAYLOAD: ${{ steps.parse.outputs.payload }}
 
-      # ── デフォルト: 不明なアクション ──────────────────────
-
-      # ── 結果を private repo へ保存 ─────────────────────────
       - name: Save result to private repo
         env:
           PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
-        run: |
-          ACTION="${{ steps.parse.outputs.action }}"
-          git clone https://x-access-token:$PAT_TOKEN@github.com/tokistorage/tr.git /tmp/tr
-          cd /tmp/tr
-
-          case "$ACTION" in
-            fetch_project)
-              python3 << 'PYEOF'
-          import json, datetime
-
-          with open('/tmp/result.json') as f:
-              raw = json.load(f)
-
-          nodes = raw['data']['user']['projectV2']['items']['nodes']
-          tasks = []
-          for n in nodes:
-              c = n.get('content') or {}
-              status = ''
-              for fv in (n.get('fieldValues') or {}).get('nodes', []):
-                  if fv and fv.get('field', {}).get('name') == 'Status':
-                      status = fv.get('name', '')
-              tasks.append({
-                  'id': n['id'],
-                  'title': c.get('title', '(draft)'),
-                  'state': c.get('state', ''),
-                  'status': status,
-                  'number': c.get('number'),
-                  'url': c.get('url'),
-              })
-
-          result = {
-              'project': raw['data']['user']['projectV2']['title'],
-              'fetched_at': datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
-              'total': len(tasks),
-              'tasks': tasks,
-          }
-
-          with open('/tmp/tr/project/cache/project.json', 'w') as f:
-              json.dump(result, f, ensure_ascii=False, indent=2)
-          print(f"✅ {len(tasks)}件 → project/cache/project.json")
-          PYEOF
-              ;;
-            update_task)
-              cp /tmp/result.json /tmp/tr/project/updates/latest.json
-              echo "✅ update結果 → project/updates/latest.json"
-              ;;
-            create_issue)
-              mkdir -p /tmp/tr/outbox
-              cp /tmp/result.json /tmp/tr/outbox/created_issue.json
-              echo "✅ issue作成結果 → outbox/created_issue.json"
-              ;;
-            write_file)
-              WPATH=$(python3 -c "import json; print(json.load(open('/tmp/result.json'))['path'])")
-              mkdir -p "$(dirname /tmp/tr/$WPATH)"
-              cp /tmp/tr_write_content.txt "/tmp/tr/$WPATH"
-              echo "✅ ファイル書き込み → $WPATH"
-              ;;
-            write_memory)
-              MPATH=$(cat /tmp/tr_memory/path.txt)
-              MODE=$(cat /tmp/tr_memory/mode.txt)
-              mkdir -p "$(dirname /tmp/tr/memory/$MPATH)"
-              if [ "$MODE" = "append" ] && [ -f "/tmp/tr/memory/$MPATH" ]; then
-                cat /tmp/tr_memory/content.txt >> "/tmp/tr/memory/$MPATH"
-              else
-                cp /tmp/tr_memory/content.txt "/tmp/tr/memory/$MPATH"
-              fi
-              echo "✅ write_memory → memory/$MPATH ($MODE)"
-              ;;
-            publish_essay)
-              FNAME=$(cat /tmp/tr_essay/filename.txt)
-              mkdir -p /tmp/tr/outbox/essays
-              cp /tmp/tr_essay/content.txt "/tmp/tr/outbox/essays/$FNAME"
-              echo "✅ publish_essay → outbox/essays/$FNAME"
-              ;;
-            reorder_tasks)
-              mkdir -p /tmp/tr/outbox
-              cp /tmp/result.json /tmp/tr/outbox/reorder_result.json
-              echo "✅ 並び替え結果 → outbox/reorder_result.json"
-              ;;
-            close_issue)
-              mkdir -p /tmp/tr/outbox
-              cp /tmp/result.json /tmp/tr/outbox/close_issue_result.json
-              echo "✅ クローズ結果 → outbox/close_issue_result.json"
-              ;;
-            add_comment)
-              mkdir -p /tmp/tr/outbox
-              cp /tmp/result.json /tmp/tr/outbox/comment_result.json
-              echo "✅ コメント結果 → outbox/comment_result.json"
-              ;;
-            run_skill)
-              mkdir -p /tmp/tr/outbox
-              cp /tmp/result.json /tmp/tr/outbox/skill_queue.json
-              echo "✅ スキルキュー → outbox/skill_queue.json"
-              ;;
-            fetch_inbox)
-              DATE=$(python3 -c "import json; print(json.load(open('/tmp/result.json'))['date'])")
-              mkdir -p /tmp/tr/memory/inbox
-              cp /tmp/result.json "/tmp/tr/memory/inbox/${DATE}.json"
-              echo "✅ fetch_inbox → memory/inbox/${DATE}.json"
-              ;;
-            send_email)
-              mkdir -p /tmp/tr/outbox
-              cp /tmp/result.json /tmp/tr/outbox/send_email_result.json
-              echo "✅ send_email結果 → outbox/send_email_result.json"
-              ;;
-            write_inbox)
-              FNAME=$(cat /tmp/tr_inbox/filename.txt)
-              mkdir -p /tmp/tr/memory/inbox
-              cp /tmp/tr_inbox/content.txt "/tmp/tr/memory/inbox/$FNAME"
-              echo "✅ write_inbox → memory/inbox/$FNAME"
-              ;;
-            write_relations)
-              RPATH=$(cat /tmp/tr_relations/path.txt)
-              RMODE=$(cat /tmp/tr_relations/mode.txt)
-              mkdir -p "$(dirname /tmp/tr/memory/relations/$RPATH)"
-              if [ "$RMODE" = "append" ] && [ -f "/tmp/tr/memory/relations/$RPATH" ]; then
-                cat /tmp/tr_relations/content.txt >> "/tmp/tr/memory/relations/$RPATH"
-              else
-                cp /tmp/tr_relations/content.txt "/tmp/tr/memory/relations/$RPATH"
-              fi
-              echo "✅ write_relations → memory/relations/$RPATH ($RMODE)"
-              ;;
-            archive_inbox)
-              FILES=$(python3 -c "import json; print(chr(10).join(json.load(open('/tmp/result.json'))['files']))")
-              mkdir -p /tmp/tr/memory/inbox/archive
-              echo "$FILES" | while IFS= read -r FNAME; do
-                [ -z "$FNAME" ] && continue
-                if [ -f "/tmp/tr/memory/inbox/$FNAME" ]; then
-                  mv "/tmp/tr/memory/inbox/$FNAME" "/tmp/tr/memory/inbox/archive/$FNAME"
-                  echo "✅ アーカイブ: $FNAME"
-                else
-                  echo "⚠️ 見つからず: $FNAME"
-                fi
-              done
-              ;;
-            morning_briefing)
-              DATE=$(python3 -c "import json; print(json.load(open('/tmp/result.json'))['date'])")
-              mkdir -p /tmp/tr/memory/daily /tmp/tr/memory/briefings
-              python3 $GITHUB_WORKSPACE/agent/save_briefing.py
-              cp /tmp/result.json "/tmp/tr/memory/briefings/${DATE}.json"
-              echo "✅ morning_briefing → memory/briefings/${DATE}.json"
-              ;;
-          esac
-
-          # ハンドシェイク: .agent/last_run.json を更新
-          mkdir -p /tmp/tr/.agent
-          python3 -c "
-          import json, datetime
-          info = {'last_run': datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'), 'action': '$ACTION', 'status': 'ok'}
-          open('/tmp/tr/.agent/last_run.json','w').write(json.dumps(info, indent=2))
-          "
-
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
-          git add -A
-          git diff --cached --quiet || git commit -m "agent[$ACTION]: $(date '+%Y-%m-%dT%H:%M:%S') [skip ci]"
-          git push
-          echo "✅ private repo push完了"
+          ACTION: ${{ steps.parse.outputs.action }}
+        run: bash $GITHUB_WORKSPACE/agent/save_result.sh
