@@ -1,1 +1,1 @@
-{"action": "create_issue", "payload": {"title": "三菱UFJニコスに連絡（3月末までに）", "body": "- 期限: 2026-03-31\n- 4月9日まで同一部署、以降は別部署になる見込み\n- 部署異動前に一度コンタクトを取る", "labels": [], "repo": "tokistorage/tokistorage.github.io"}, "_t": "2026-03-15T00:52:00Z"}
+{"action": "update_task", "payload": {"updates": [{"task_id": "PVTI_lAHOD5OzBM4BRKWuzgndk5M", "new_status": "In Progress"}]}, "_t": "2026-03-15T00:53:12Z"}
