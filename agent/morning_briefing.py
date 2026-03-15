@@ -1,4 +1,4 @@
-import json, os, datetime, urllib.request, glob, subprocess
+import json, os, datetime, urllib.request, glob, subprocess, re
 
 token = os.environ['PAT_TOKEN']
 now_jst = datetime.datetime.utcnow() + datetime.timedelta(hours=9)
@@ -43,6 +43,56 @@ for path in inbox_files:
     except Exception:
         pass
 
+# relations 読み込み（フォローアップ判定）
+FOLLOWUP_DAYS = 30
+relations_alert = []
+relations_all = []
+
+for path in sorted(glob.glob('/tmp/tr_briefing/memory/relations/**/*.md', recursive=True)):
+    if '_template' in path:
+        continue
+    try:
+        raw = open(path).read()
+        name = raw.split('\n')[0].lstrip('# ').strip()
+
+        # 最終接触日を抽出
+        last_contact = None
+        m = re.search(r'最終接触[:：]\s*(\d{4}-\d{2}-\d{2})', raw)
+        if m:
+            last_contact = datetime.date.fromisoformat(m.group(1))
+
+        # 次のアクション日を抽出
+        next_action = None
+        m2 = re.search(r'次のアクション[:：].*?(\d{4}-\d{2}-\d{2})', raw)
+        if m2:
+            next_action = datetime.date.fromisoformat(m2.group(1))
+
+        today_date = now_jst.date()
+        entry = {'name': name, 'path': path, 'last_contact': last_contact, 'next_action': next_action}
+        relations_all.append(entry)
+
+        # アラート判定: 次のアクション期限が今日以前 or 最終接触から30日超
+        if next_action and next_action <= today_date:
+            entry['alert'] = f'期限: {next_action}'
+            relations_alert.append(entry)
+        elif last_contact and (today_date - last_contact).days >= FOLLOWUP_DAYS:
+            entry['alert'] = f'最終接触から{(today_date - last_contact).days}日経過'
+            relations_alert.append(entry)
+        elif not last_contact and not next_action:
+            pass  # 未記録はアラートしない
+
+    except Exception:
+        pass
+
+# relations サマリー文字列生成
+relations_summary = f"登録済み: {len(relations_all)}件\n"
+if relations_alert:
+    relations_summary += "\nフォローアップ推奨:\n"
+    for r in relations_alert:
+        relations_summary += f"- {r['name']}（{r['alert']}）\n"
+else:
+    relations_summary += "フォローアップ必要なし\n"
+
 tasks_json = json.dumps(tasks, ensure_ascii=False)
 format_instructions = (
     "以下のフォーマットで出力してください:\n\n"
@@ -62,20 +112,24 @@ format_instructions = (
     "🎙️ 声メモ\n（テスト・挨拶を除いた実質メモのみ）\n\n"
     "📬 メール\n（ニュースレター・GitHub通知を除く、要対応・重要情報のみ ⚠️付き）\n\n"
     "---\n\n"
+    "🤝 **リレーション フォローアップ**\n"
+    "（次のアクション期限が来ている、または長期間連絡のない関係先。なければ「なし」）\n\n"
+    "---\n\n"
     "💬 今日は何から始めますか？"
 )
 
 prompt = (
     "あなたはtokistorageの専属エージェントです。\n\n"
     "# プロジェクトタスク\n" + tasks_json + "\n\n"
-    "# インボックス（声メモ・メール）\n" + inbox_content[:5000] + "\n\n"
+    "# インボックス（声メモ・メール）\n" + inbox_content[:4000] + "\n\n"
+    "# リレーション情報\n" + relations_summary + "\n\n"
     "# 指示\n" + format_instructions
 )
 
 body = json.dumps({
     'model': 'openai/gpt-4o-mini',
     'messages': [{'role': 'user', 'content': prompt}],
-    'max_tokens': 1500
+    'max_tokens': 1800
 }).encode()
 
 req = urllib.request.Request(
@@ -96,7 +150,8 @@ output = {
     'date': today,
     'briefing': briefing,
     'model': 'openai/gpt-4o-mini',
-    'inbox_files': [os.path.basename(f) for f in inbox_files]
+    'inbox_files': [os.path.basename(f) for f in inbox_files],
+    'relations_alert_count': len(relations_alert)
 }
 with open('/tmp/result.json', 'w') as f:
     json.dump(output, f, ensure_ascii=False, indent=2)
