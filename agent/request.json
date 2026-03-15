@@ -1,1 +1,1 @@
-{"action": "write_memory", "payload": {"path": "daily/2026-03-15.md", "content": "\n## 浦安物件 売却査定完了\n- 不動産会社: ロイヤルハウジング、担当: 中江さん\n- 署名済み・動き始め\n- 査定額: 16,480万円\n- 手付金: 300万円（3月30日、現金）\n- Issue #17（浦安物件の売却）を In Progress に更新すること\n", "mode": "append"}, "_t": "2026-03-15T10:33:44Z"}
+{"action": "update_task", "payload": {"issue_number": 17, "status": "In Progress", "comment": "2026-03-15 ロイヤルハウジング・中江さんに売却依頼、署名完了。査定額16,480万円。手付金300万円（3月30日、現金）。"}, "_t": "2026-03-15T10:33:54Z"}
