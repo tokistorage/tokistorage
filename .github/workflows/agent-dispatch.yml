@@ -694,6 +694,35 @@ jobs:
           PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
           PAYLOAD: ${{ steps.parse.outputs.payload }}
 
+      # ── write_relations ───────────────────────────────────
+      - name: write_relations
+        if: steps.parse.outputs.action == 'write_relations'
+        run: |
+          python3 << 'PYEOF2'
+import json, os
+
+payload = json.loads(os.environ.get('PAYLOAD', '{}'))
+path = payload.get('path', '')   # 例: "people/randall.md"
+content = payload.get('content', '')
+mode = payload.get('mode', 'overwrite')  # overwrite | append
+
+if not path:
+    raise ValueError("path is required")
+
+os.makedirs('/tmp/tr_relations', exist_ok=True)
+with open('/tmp/tr_relations/path.txt', 'w') as f:
+    f.write(path)
+with open('/tmp/tr_relations/content.txt', 'w') as f:
+    f.write(content)
+with open('/tmp/tr_relations/mode.txt', 'w') as f:
+    f.write(mode)
+with open('/tmp/result.json', 'w') as f:
+    json.dump({'action': 'write_relations', 'path': f'memory/relations/{path}', 'mode': mode, 'size': len(content)}, f, ensure_ascii=False, indent=2)
+print(f"✅ write_relations: memory/relations/{path} ({mode}, {len(content)} chars)")
+PYEOF2
+        env:
+          PAYLOAD: ${{ steps.parse.outputs.payload }}
+
       # ── run_skill ──────────────────────────────────────────
       # Claude自身が次のアクションのリクエストを書き込むスキルチェーン用
       - name: run_skill
@@ -829,6 +858,17 @@ jobs:
               mkdir -p /tmp/tr/memory/inbox
               cp /tmp/tr_inbox/content.txt "/tmp/tr/memory/inbox/$FNAME"
               echo "✅ write_inbox → memory/inbox/$FNAME"
+              ;;
+            write_relations)
+              RPATH=$(cat /tmp/tr_relations/path.txt)
+              RMODE=$(cat /tmp/tr_relations/mode.txt)
+              mkdir -p "$(dirname /tmp/tr/memory/relations/$RPATH)"
+              if [ "$RMODE" = "append" ] && [ -f "/tmp/tr/memory/relations/$RPATH" ]; then
+                cat /tmp/tr_relations/content.txt >> "/tmp/tr/memory/relations/$RPATH"
+              else
+                cp /tmp/tr_relations/content.txt "/tmp/tr/memory/relations/$RPATH"
+              fi
+              echo "✅ write_relations → memory/relations/$RPATH ($RMODE)"
               ;;
             archive_inbox)
               FILES=$(python3 -c "import json; print(chr(10).join(json.load(open('/tmp/result.json'))['files']))")
