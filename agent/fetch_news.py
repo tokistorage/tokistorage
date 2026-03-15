@@ -21,11 +21,11 @@ FEEDS = [
     {'label': '災害・BCP', 'url': 'https://hnrss.org/frontpage?q=disaster+resilience+offline&count=5'},
 ]
 
-def fetch_rss(url, max_items=5):
+def fetch_rss(url, max_items=5, timeout=8):
     items = []
     try:
         req = urllib.request.Request(url, headers={'User-Agent': 'TokiStorage-Agent/1.0'})
-        with urllib.request.urlopen(req, timeout=10) as r:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
             raw = r.read()
         root = ET.fromstring(raw)
         ns = {'atom': 'http://www.w3.org/2005/Atom'}
