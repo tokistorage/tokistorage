@@ -93,6 +93,24 @@ if relations_alert:
 else:
     relations_summary += "フォローアップ必要なし\n"
 
+# ニュース取得（fetch_news.py を実行）
+news_digest = ''
+try:
+    workspace = os.environ.get('GITHUB_WORKSPACE', os.path.dirname(os.path.abspath(__file__)) + '/..')
+    fetch_news_path = os.path.join(workspace, 'agent', 'fetch_news.py')
+    r = subprocess.run(['python3', fetch_news_path],
+               capture_output=True, text=True, timeout=60,
+               env={**os.environ, 'PAT_TOKEN': token})
+    print(r.stdout[-500:] if r.stdout else '')
+    if os.path.exists('/tmp/news_result.json'):
+        nd = json.load(open('/tmp/news_result.json'))
+        news_digest = nd.get('news_digest', '')
+        print(f'✅ ニュース取得完了: {nd.get("raw_count",0)}件')
+    else:
+        print(f'⚠️ ニュース結果ファイルなし: {r.stderr[:200]}')
+except Exception as e:
+    print(f'⚠️ ニュース取得エラー: {e}')
+
 tasks_json = json.dumps(tasks, ensure_ascii=False)
 format_instructions = (
     "以下のフォーマットで出力してください:\n\n"
@@ -115,6 +133,10 @@ format_instructions = (
     "🤝 **リレーション フォローアップ**\n"
     "（次のアクション期限が来ている、または長期間連絡のない関係先。なければ「なし」）\n\n"
     "---\n\n"
+    "---\n\n"
+    "🌍 **トキストレージ目線のニュース**\n"
+    "（社会動向ニュースから関連トピックを1〜3件。なければ省略）\n\n"
+    "---\n\n"
     "💬 今日は何から始めますか？"
 )
 
@@ -123,7 +145,8 @@ prompt = (
     "# プロジェクトタスク\n" + tasks_json + "\n\n"
     "# インボックス（声メモ・メール）\n" + inbox_content[:4000] + "\n\n"
     "# リレーション情報\n" + relations_summary + "\n\n"
-    "# 指示\n" + format_instructions
+    "# 指示\n" + format_instructions + "\n\n"
+    "# 社会動向ニュース（参考）\n" + (news_digest or "（取得なし）")
 )
 
 body = json.dumps({
