@@ -1,1 +1,1 @@
-{"action": "write_memory", "payload": {"path": "daily/2026-03-15.md", "content": "\n## ⚠️ 本日中にやること\n- 倉庫の不動産契約書を確認して自宅に保管し直す\n  （売却手続きで原本が必要になる可能性あり）\n", "mode": "append"}, "_t": "2026-03-15T10:36:47Z"}
+{"action": "write_memory", "payload": {"path": "daily/2026-03-15.md", "content": "\n## 不動産契約書 確保済み\n- 倉庫から不動産契約書を取り出して自宅に保管し直し完了\n- 売却手続きの障害なし\n", "mode": "append"}, "_t": "2026-03-15T12:56:21Z"}
