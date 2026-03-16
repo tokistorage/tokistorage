@@ -1,1 +1,1 @@
-{"action": "fetch_inbox", "payload": {}}
+{"action": "write_memory", "payload": {"path": "daily/2026-03-15.md", "content": "\n## ⚠️ 3月30日 支払い連絡\n- エリアリンク（ハローストレージ）\n- 電話番号: 03-3526-8668\n- 内容: 倉庫のお支払い連絡\n- 手付金受け取りと同日（3月30日）\n", "mode": "append"}, "_t": "2026-03-16T07:32:00Z"}
