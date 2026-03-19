@@ -178,6 +178,13 @@ jobs:
           PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
           PAYLOAD: ${{ steps.parse.outputs.payload }}
 
+      - name: create_repo
+        if: steps.parse.outputs.action == 'create_repo'
+        run: python3 $GITHUB_WORKSPACE/agent/actions/create_repo.py
+        env:
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+          PAYLOAD: ${{ steps.parse.outputs.payload }}
+
       - name: run_skill
         if: steps.parse.outputs.action == 'run_skill'
         run: python3 $GITHUB_WORKSPACE/agent/actions/run_skill.py
