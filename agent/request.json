@@ -1,9 +1,1 @@
-{
-  "action": "create_repo",
-  "payload": {
-    "name": "hello-briefing",
-    "description": "朝の学びを定着させるPWA — Hello Briefing by tokistorage",
-    "private": false,
-    "auto_init": true
-  }
-}
+{"action": "create_repo", "payload": {"org": "tokistorage", "name": "hello-briefing-tr", "description": "Hello Briefing private storage: VAPID keys and push subscriptions", "private": true, "auto_init": true}, "_t": "2026-03-19T21:39:07Z"}
