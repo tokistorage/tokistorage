@@ -185,6 +185,13 @@ jobs:
           PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
           PAYLOAD: ${{ steps.parse.outputs.payload }}
 
+      - name: fetch_issues
+        if: steps.parse.outputs.action == 'fetch_issues'
+        run: python3 $GITHUB_WORKSPACE/agent/actions/fetch_issues.py
+        env:
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+          PAYLOAD: ${{ steps.parse.outputs.payload }}
+
       - name: run_skill
         if: steps.parse.outputs.action == 'run_skill'
         run: python3 $GITHUB_WORKSPACE/agent/actions/run_skill.py
