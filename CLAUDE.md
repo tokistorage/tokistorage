@@ -110,6 +110,18 @@ GitHub Actions経由で実行できる操作。
 ```
 → 指定したIssueをクローズ（`repo` 省略時は `tokistorage/tokistorage.github.io`）
 
+```json
+{
+  "action": "fetch_issues",
+  "payload": {
+    "repo": "tokistorage/tr",
+    "labels": "contact",
+    "state": "open"
+  }
+}
+```
+→ 指定リポジトリのIssueを取得 → `tr/memory/issues/latest.json` に保存。Hello Briefingからの問い合わせ確認に使う。`labels` / `state` は省略可能。
+
 ### ファイル操作
 ```json
 {
